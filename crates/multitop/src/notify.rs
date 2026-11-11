@@ -113,7 +113,7 @@ async fn post_webhook(url: &str, title: &str, body: &str) -> std::io::Result<()>
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
 
-    let _ = cmd.status().await;
+    run_delivery(cmd).await;
     Ok(())
 }
 
@@ -127,17 +127,49 @@ async fn send_desktop_notification(title: &str, body: &str) -> std::io::Result<(
         );
         let mut cmd = tokio::process::Command::new("osascript");
         cmd.arg("-e").arg(script);
-        let _ = cmd.status().await;
+        run_delivery(cmd).await;
     }
 
     #[cfg(not(target_os = "macos"))]
     {
         let mut cmd = tokio::process::Command::new("notify-send");
         cmd.arg(title).arg(body);
-        let _ = cmd.status().await;
+        run_delivery(cmd).await;
     }
 
     Ok(())
+}
+
+// External delivery is the single process boundary. Unit tests exercise the
+// real routing and command construction, but record here instead of launching
+// curl, osascript or notify-send on the developer's machine.
+#[cfg(not(test))]
+async fn run_delivery(mut cmd: tokio::process::Command) {
+    let _ = cmd.status().await;
+}
+
+#[cfg(test)]
+#[derive(Debug)]
+struct RecordedDelivery {
+    program: String,
+    args: Vec<String>,
+}
+
+#[cfg(test)]
+static DELIVERIES: std::sync::Mutex<Vec<RecordedDelivery>> = std::sync::Mutex::new(Vec::new());
+
+#[cfg(test)]
+fn run_delivery(cmd: tokio::process::Command) -> std::future::Ready<()> {
+    let command = cmd.as_std();
+    DELIVERIES.lock().unwrap().push(RecordedDelivery {
+        program: command.get_program().to_string_lossy().into_owned(),
+        args: command
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect(),
+    });
+    drop(cmd);
+    std::future::ready(())
 }
 
 #[cfg(test)]
@@ -189,6 +221,7 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_with_targets() {
+        DELIVERIES.lock().unwrap().clear();
         let server = Server {
             host: "srv-alert".into(),
             ..Default::default()
@@ -206,5 +239,30 @@ mod tests {
         dispatch_upgrade_notification(&server, false, Some(10), &targets);
         dispatch_breach_notification(&server, "DISK", 99, 90, &targets);
         dispatch_all("Title", "Body", &targets).await;
+        // Both public dispatchers spawn a task. Let them complete against the
+        // recording transport before checking delivery, without any OS calls.
+        tokio::task::yield_now().await;
+        let deliveries = DELIVERIES.lock().unwrap();
+        assert_eq!(deliveries.len(), 6);
+        assert_eq!(deliveries.iter().filter(|d| d.program == "curl").count(), 3);
+        let desktop = if cfg!(target_os = "macos") {
+            "osascript"
+        } else {
+            "notify-send"
+        };
+        assert_eq!(
+            deliveries.iter().filter(|d| d.program == desktop).count(),
+            3
+        );
+        assert!(deliveries
+            .iter()
+            .any(|d| d.args.iter().any(|arg| arg.contains("DISK breached"))));
+        assert!(deliveries
+            .iter()
+            .any(|d| d.args.iter().any(|arg| arg.contains("upgrade failed"))));
+        assert!(deliveries
+            .iter()
+            .any(|d| d.args.iter().any(|arg| arg.contains("Body"))));
+        drop(deliveries);
     }
 }
