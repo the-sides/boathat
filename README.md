@@ -1,7 +1,10 @@
-# multitop — multi-server TUI dashboard
+# boathat
 
-This fork adds `multitop --boat`: automatic Boat discovery and a live SSH metrics grid.
+A live Boat fleet dashboard, built on [multitop](https://github.com/ztomer/multitop).
+Run `./boathat` for automatic Boat discovery and a live SSH metrics grid.
 See [Boat fleet dashboard](docs/boat.md) for setup and behavior.
+
+## Upstream multitop
 
 SSH into multiple servers and watch a compact real-time system monitor
 for each one, side by side in a single terminal. Written in Rust

@@ -1,4 +1,4 @@
-# Boat fleet dashboard
+# boathat — Boat fleet dashboard
 
 This fork adds automatic Boat discovery to the existing multitop SSH grid.
 
@@ -9,7 +9,7 @@ upstream build script so the executable includes its Linux collectors:
 
 ```sh
 ./build.sh --backend zigbuild
-./boat-grid
+./boathat
 ```
 
 The build needs Rust, Zig and cargo-zigbuild. The upstream build script also
