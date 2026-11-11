@@ -103,6 +103,19 @@ pub fn spawn_monitor(
     tx: tokio::sync::mpsc::Sender<Msg>,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
+        if crate::boat::offline(&server.host) {
+            let _ = tx
+                .send(Msg::Frame {
+                    panel: idx,
+                    epoch,
+                    lines: vec![
+                        String::new(),
+                        "Not running. No SSH connection or automatic resume.".into(),
+                    ],
+                })
+                .await;
+            return;
+        }
         let mut failures = 0usize;
         loop {
             let status_tx = tx.clone();

@@ -8,12 +8,14 @@
 //! - [`handle_key`] — key dispatch; [`commands`] — `execute_cmds`
 //! - [`spawn`] — monitor spawn (re-exported)
 
+mod boat;
 mod boot;
 pub(super) mod commands;
 mod confirm_keys;
 pub(super) mod dims;
 mod entry;
 pub(super) mod event_loop;
+mod finish;
 pub(super) mod handle_key;
 mod nav_keys;
 mod palette;
@@ -22,7 +24,22 @@ pub(super) mod terminal;
 
 pub mod spawn;
 
-pub use entry::run;
+pub use entry::{run, run_fleet};
+
+/// The source of the dashboard's host list.
+pub enum Fleet {
+    Configured(Vec<crate::config::Server>),
+    Boat,
+}
+
+impl Fleet {
+    fn initial(&self) -> Vec<crate::config::Server> {
+        match self {
+            Self::Configured(servers) => servers.clone(),
+            Self::Boat => vec![crate::boat::waiting("Discovering Boat sandboxes…")],
+        }
+    }
+}
 pub use event_loop::{event_loop, panel_at_pos, LoopOutcome};
 pub use handle_key::handle_key;
 pub use spawn::spawn_biometric_unlock;

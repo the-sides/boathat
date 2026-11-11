@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+dashboard="$project_dir/target/release/multitop"
+if [ ! -x "$dashboard" ]; then
+    printf 'Build the dashboard first: cd %q && ./build.sh --backend zigbuild\n' "$project_dir" >&2
+    exit 1
+fi
+exec "$dashboard" --boat "$@"

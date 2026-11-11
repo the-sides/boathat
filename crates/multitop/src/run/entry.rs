@@ -17,8 +17,9 @@ use tokio::sync::watch;
 use crate::config::Server;
 use crate::ui;
 
-use super::event_loop::event_loop;
+use super::event_loop::event_loop_fleet;
 use super::terminal::{self, TerminalGuard};
+use super::Fleet;
 
 /// Run the multitop application.
 ///
@@ -30,6 +31,19 @@ pub async fn run(
     config_path: PathBuf,
     initial_theme: Option<String>,
 ) -> std::io::Result<()> {
+    run_fleet(Fleet::Configured(servers), config_path, initial_theme).await
+}
+
+/// Run a configured fleet or discover Boat sandboxes continuously.
+///
+/// # Errors
+/// Returns terminal initialization or event-loop failures.
+pub async fn run_fleet(
+    fleet: Fleet,
+    config_path: PathBuf,
+    initial_theme: Option<String>,
+) -> std::io::Result<()> {
+    let servers = fleet.initial();
     let mut terminal = terminal::take_terminal()?;
     // Restoration is a guard rather than trailing statements, so it cannot be
     // skipped. Both of the calls that used to sit here propagated with `?`: a
@@ -45,11 +59,11 @@ pub async fn run(
     terminal::enter_terminal_modes(&mut std::io::stdout())?;
     let (dims_tx, _) = watch::channel(ui::agent_dims(terminal.size()?, servers.len()));
     let mut events = EventStream::new();
-    let outcome = event_loop(
+    let outcome = event_loop_fleet(
         &mut terminal,
         &mut events,
         dims_tx,
-        servers,
+        fleet,
         config_path,
         initial_theme,
     )

@@ -387,6 +387,9 @@ pub fn keybar_content(
         Some(crate::app::Confirm::Quit) => quit_confirm_row(app, &styles, keybar_width),
         Some(crate::app::Confirm::Kill) => kill_confirm_row(app, &styles, keybar_width),
         Some(crate::app::Confirm::Upgrade) => upgrade_confirm_row(app, &styles, keybar_width),
+        None if app.boat.is_some() && app.filter_query.is_empty() && !app.is_filtering() => {
+            Line::from(Span::styled(crate::boat_fleet::summary(app), styles.label))
+        }
         None => keybar_line(app.sort, theme, keybar_width, active_mode, filter_hint(app)),
     }
 }

@@ -27,6 +27,7 @@ use super::spawn::spawn_monitor;
 use super::tasks::Tasks;
 use super::terminal::{next_terminal_signal, SignalAction, TerminalSignals};
 
+use super::finish::{finish_loop, settle_iteration};
 use super::RESIZE_DEBOUNCE;
 
 /// Why the event loop stopped, and what it killed on the way out.
@@ -187,7 +188,7 @@ fn drain_messages(
 
 /// Re-render every panel when the terminal's size (or the pane count) has
 /// changed; a failed size query keeps the last one -- see `size_change`.
-fn refit<B>(terminal: &ratatui::Terminal<B>, dims: &mut AgentDims, app: &mut App)
+pub(super) fn refit<B>(terminal: &ratatui::Terminal<B>, dims: &mut AgentDims, app: &mut App)
 where
     B: ratatui::backend::Backend,
 {
@@ -200,7 +201,7 @@ where
 /// signal-tier file; this is the richer tier only the loop can produce,
 /// because only it may touch `App`. State tier present => the loop is alive;
 /// absent while the signal tier exists => the loop is wedged.
-fn dump_state_tier(
+pub(super) fn dump_state_tier(
     diag: &crate::diag::Diag,
     app: &App,
     tasks: &Tasks,
@@ -245,6 +246,32 @@ where
     B::Error: std::error::Error + Send + Sync + 'static,
     S: tokio_stream::Stream<Item = std::io::Result<Event>> + Unpin,
 {
+    event_loop_fleet(
+        terminal,
+        events,
+        dims_tx,
+        super::Fleet::Configured(servers),
+        config_path,
+        initial_theme,
+    )
+    .await
+}
+
+pub(super) async fn event_loop_fleet<B, S>(
+    terminal: &mut ratatui::Terminal<B>,
+    events: &mut S,
+    dims_tx: watch::Sender<(u16, u16)>,
+    fleet: super::Fleet,
+    config_path: PathBuf,
+    initial_theme: Option<String>,
+) -> LoopOutcome
+where
+    B: ratatui::backend::Backend,
+    B::Error: std::error::Error + Send + Sync + 'static,
+    S: tokio_stream::Stream<Item = std::io::Result<Event>> + Unpin,
+{
+    let servers = fleet.initial();
+    let mut boat_feed = matches!(fleet, super::Fleet::Boat).then(super::boat::Feed::start);
     // First, before the config read, the state read and the vault probe: a stop
     // that lands in that window is a stop with no handler to catch it and no
     // `SIGCONT` handler to repair the terminal afterwards. A failure to install
@@ -265,6 +292,9 @@ where
     let mut signals: Option<()> = None;
 
     let mut app = boot_app(&servers, &config_path, initial_theme.as_deref());
+    if boat_feed.is_some() {
+        app.boat = Some(crate::boat_fleet::State::default());
+    }
     let (tx, mut rx) = mpsc::channel::<Msg>(512);
     let mut tasks = Tasks::new(servers.len());
 
@@ -290,14 +320,11 @@ where
             dirty = false;
         }
 
-        let resize_wait = async {
-            match resize_at {
-                Some(at) => tokio::time::sleep_until(at).await,
-                None => std::future::pending().await,
-            }
-        };
-
         tokio::select! {
+            update = super::boat::next(&mut boat_feed) => {
+                super::boat::reconcile(&mut app, update);
+                dirty = true;
+            },
             action = next_terminal_signal(&mut signals) => match action {
                 SignalAction::Quit => app.quit(),
                 SignalAction::Resumed => {
@@ -316,27 +343,14 @@ where
                         diag.bump_key();
                         handle_key(key, &mut app, dims.current(), &dims_rx, &tx, &mut tasks);
                         tasks.retire_ops(&app.panels);
-                        let epoch_changed = app.panels_epoch != known_epoch;
-                        if epoch_changed {
-                            known_epoch = app.panels_epoch;
-                            tasks.fit_to(app.panels.len());
-                        }
-                        // Any key can change how many panes are on screen --
-                        // typing a filter is the common one, and it re-splits
-                        // the grid on every keystroke. This is where the render
-                        // size follows it (no debounce: `size_change` diffs
-                        // the whole input signature, so a keystroke that
-                        // changes nothing costs one comparison). After the
-                        // size, so restarted agents read the new one rather
-                        // than the size the old panel list implied.
                         refit(terminal, &mut dims, &mut app);
-                        if epoch_changed {
-                            restart_all_agents(&app, &dims_rx, &tx, &mut tasks);
-                        }
                         dirty = true;
                     }
                     Some(Ok(Event::Mouse(mouse))) => {
-                        dirty |= handle_mouse(&mut app, mouse, terminal_size(terminal, &dims));
+                        if !super::boat::dismiss(&mut app, mouse, terminal_size(terminal, &dims)) {
+                            let _ = handle_mouse(&mut app, mouse, terminal_size(terminal, &dims));
+                        }
+                        dirty = true;
                     }
                     Some(Ok(Event::Resize(..))) => {
                         diag.set_phase(Phase::Resizing);
@@ -354,7 +368,7 @@ where
                 diag.set_phase(Phase::Applying);
                 dirty |= drain_messages(&mut app, msg, &mut rx, &diag, &tasks);
             }
-            () = resize_wait, if resize_at.is_some() => {
+            () = tokio::time::sleep_until(resize_at.unwrap_or_else(Instant::now)), if resize_at.is_some() => {
                 diag.set_phase(Phase::Resizing);
                 resize_at = None;
                 // Re-render panels at the new size so logos and stats adapt. A
@@ -365,24 +379,22 @@ where
             }
         }
 
-        diag.bump_iter();
-        if let Some((seq, sig)) = diag.take_request() {
-            dump_state_tier(&diag, &app, &tasks, seq, sig);
-        }
-        diag.set_phase(Phase::Idle);
+        settle_iteration(
+            terminal,
+            &mut dims,
+            &mut app,
+            &mut tasks,
+            (&dims_rx, &tx),
+            &mut known_epoch,
+            &diag,
+        );
 
         if app.should_quit() {
             break;
         }
     }
 
-    // Named before `abort_all` flips the STARTED flags to DONE.
-    let killed = app.running_upgrade_hosts();
-    tasks.abort_all(&mut app);
-    LoopOutcome {
-        killed,
-        error: fatal,
-    }
+    finish_loop(&mut app, &mut tasks, fatal)
 }
 
 /// Which panel a click landed on, or `None` if it landed on no panel at all.

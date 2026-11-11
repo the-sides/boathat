@@ -1,5 +1,8 @@
 # multitop — multi-server TUI dashboard
 
+This fork adds `multitop --boat`: automatic Boat discovery and a live SSH metrics grid.
+See [Boat fleet dashboard](docs/boat.md) for setup and behavior.
+
 SSH into multiple servers and watch a compact real-time system monitor
 for each one, side by side in a single terminal. Written in Rust
 ([ratatui](https://ratatui.rs) + tokio).

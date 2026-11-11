@@ -11,6 +11,8 @@ compile_error!("multitop requires Apple Silicon on macOS; Intel Macs are not sup
 pub mod ansi;
 pub mod app;
 pub mod background;
+pub mod boat;
+pub mod boat_fleet;
 pub mod clock;
 pub mod config;
 pub mod config_ui;

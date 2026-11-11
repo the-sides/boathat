@@ -11,6 +11,7 @@ impl App {
 
     pub fn new(servers: Vec<Server>) -> Self {
         Self {
+            boat: None,
             panels: servers.into_iter().map(Panel::new).collect(),
             selected_panel: 0,
             mode: AppMode::Running,

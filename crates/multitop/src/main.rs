@@ -18,6 +18,7 @@ USAGE:
 OPTIONS:
     -c, --config <PATH>    Config file (default: ~/.config/multitop/config.toml)
     -r, --remote <HOSTS>   Override config with comma-separated remote hosts/IPs
+        --boat             Discover Boat sandboxes every 15s using your Boat login
         --local            Include local machine (localhost) in server list
         --local-only       Monitor local machine only (no config or SSH required)
         --serve [<ADDR>]   Run as headless HTTP companion (default :8080)
@@ -72,6 +73,7 @@ pub enum OpsMode {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CliOptions {
     pub config_path: Option<PathBuf>,
+    pub boat: bool,
     pub local: bool,
     pub local_only: bool,
     pub remote_hosts: Vec<String>,
@@ -134,6 +136,7 @@ fn parse_cli<I: IntoIterator<Item = String>>(argv: I) -> Startup {
                 }
                 None => return Startup::Fail("--remote requires host or IP list".into()),
             },
+            "--boat" => opts.boat = true,
             "--local" => opts.local = true,
             "--local-only" => opts.local_only = true,
             "--serve" => {
@@ -175,6 +178,16 @@ fn parse_cli<I: IntoIterator<Item = String>>(argv: I) -> Startup {
             }
         }
     }
+    if opts.boat
+        && (opts.local
+            || opts.local_only
+            || !opts.remote_hosts.is_empty()
+            || opts.serve_addr.is_some()
+            || opts.ops != OpsMode::Dashboard
+            || opts.ops_frame.is_some())
+    {
+        return Startup::Fail("--boat is a standalone fleet dashboard; it cannot be combined with other host or headless modes.".into());
+    }
     Startup::Run(opts)
 }
 
@@ -194,6 +207,12 @@ fn resolve_servers(
     opts: &CliOptions,
     config_path: &Path,
 ) -> Result<(Vec<config::Server>, Option<String>), String> {
+    if opts.boat {
+        return Ok((
+            vec![multitop::boat::waiting("Discovering Boat sandboxes…")],
+            None,
+        ));
+    }
     let local_server = config::Server {
         host: "localhost".into(),
         port: 0,
@@ -278,6 +297,12 @@ fn main() -> ExitCode {
         .clone()
         .unwrap_or_else(config::default_config_path);
 
+    let config_path = if opts.boat && opts.config_path.is_none() {
+        config_path.with_file_name("boat.toml")
+    } else {
+        config_path
+    };
+
     let (servers, initial_theme) = match resolve_servers(&opts, &config_path) {
         Ok(res) => res,
         Err(e) => {
@@ -340,7 +365,15 @@ fn main() -> ExitCode {
         }
     };
 
-    let code = match runtime.block_on(run::run(servers, config_path, initial_theme)) {
+    let code = match runtime.block_on(run::run_fleet(
+        if opts.boat {
+            run::Fleet::Boat
+        } else {
+            run::Fleet::Configured(servers)
+        },
+        config_path,
+        initial_theme,
+    )) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             run::say_on_stderr(format_args!("[Error] {e}"));
@@ -467,6 +500,25 @@ mod tests {
             return Err("expected Run for --serve-token-file".into());
         };
         assert_eq!(opts.serve_token_file, Some(PathBuf::from("/tmp/t")));
+        Ok(())
+    }
+
+    #[test]
+    fn boat_mode_discovers_hosts_and_rejects_conflicting_modes() -> Result<(), String> {
+        let Startup::Run(opts) = cli(&["--boat"]) else {
+            return Err("expected Boat mode".into());
+        };
+        assert!(opts.boat);
+        let (servers, _) = resolve_servers(&opts, Path::new("/not/a/config"))?;
+        assert!(multitop::boat::offline(&servers[0].host));
+        for flags in [
+            vec!["--boat", "--local"],
+            vec!["--boat", "--serve"],
+            vec!["--boat", "--remote", "host"],
+            vec!["--boat", "--ops-poll"],
+        ] {
+            assert!(matches!(cli(&flags), Startup::Fail(_)));
+        }
         Ok(())
     }
 

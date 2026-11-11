@@ -89,6 +89,13 @@ impl App {
         if epoch != self.panels_epoch {
             return false;
         }
+        if matches!(payload, multitop_agent::proto::Payload::Monitor(_)) {
+            if let (Some(state), Some(panel)) = (&mut self.boat, self.panels.get(panel)) {
+                if let Some(id) = crate::boat::identity(&panel.server.host) {
+                    state.samples.insert(id.into(), std::time::Instant::now());
+                }
+            }
+        }
         // The palette is cloned to an Rc BEFORE the mutable borrow of the panel,
         // and the borrow of `self` ends with the statement. That ordering is the
         // whole reason the palette is behind an Rc: `current_theme` used to

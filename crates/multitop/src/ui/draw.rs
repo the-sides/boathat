@@ -184,6 +184,25 @@ fn banner_row(
             _ => None,
         })
         .unwrap_or_else(|| panel.server.host.clone());
+    let host_name = panel.server.name.as_ref().unwrap_or(&host_name);
+    let boat_cpu = app.boat.as_ref().and_then(|state| {
+        let id = crate::boat::identity(&panel.server.host)?;
+        if crate::boat::offline(&panel.server.host)
+            || state
+                .samples
+                .get(id)
+                .is_none_or(|at| at.elapsed() > crate::boat::POLL_INTERVAL)
+        {
+            return None;
+        }
+        match &panel.last_monitor {
+            Some(multitop_agent::proto::Payload::Monitor(snap)) => {
+                Some(format!("{host_name} | CPU {:.1}%", snap.cpu_pct))
+            }
+            _ => None,
+        }
+    });
+    let host_name = boat_cpu.as_deref().unwrap_or(host_name);
 
     // Row 0 is composed here, once, from everything that belongs on it:
     // the banner and the scroll badge. `visible` used to write the badge
@@ -207,7 +226,7 @@ fn banner_row(
     // the name ends up computed against a width the name does not have.
     let (server_target, disp_w) = crate::layout::fit_banner_styled(
         &panel.server.user,
-        &host_name,
+        host_name,
         total_w.saturating_sub(2),
         app.banner_style,
     );

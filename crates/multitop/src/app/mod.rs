@@ -14,6 +14,7 @@ pub use crate::types::{Command, Msg};
 pub use types::{AppMode, Confirm, ExecConfirm, ExecKind, Overlay, VaultState};
 
 pub struct App {
+    pub boat: Option<crate::boat_fleet::State>,
     pub panels: Vec<Panel>,
     pub selected_panel: usize,
     pub mode: AppMode,

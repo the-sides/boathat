@@ -112,7 +112,10 @@ impl Panel {
             let pat = &q[1..q.len() - 1];
             if let Ok(re) = regex::Regex::new(pat) {
                 let haystack = |text: &str| re.is_match(text);
-                if haystack(&self.server.host) || haystack(&self.server.user) {
+                if haystack(&self.server.host)
+                    || haystack(&self.server.user)
+                    || self.server.name.as_deref().is_some_and(haystack)
+                {
                     return true;
                 }
                 return match self.mode {
@@ -126,7 +129,10 @@ impl Panel {
         }
         let hit = |text: &str| text.to_lowercase().contains(&q);
 
-        if hit(&self.server.host) || hit(&self.server.user) {
+        if hit(&self.server.host)
+            || hit(&self.server.user)
+            || self.server.name.as_deref().is_some_and(hit)
+        {
             return true;
         }
         match self.mode {

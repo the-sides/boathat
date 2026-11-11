@@ -194,6 +194,9 @@ pub fn detached(mut cmd: Command) -> Command {
 
 #[must_use]
 pub fn ssh_command(server: &Server) -> Command {
+    if let Some(cmd) = crate::boat::transport(server) {
+        return detached(cmd);
+    }
     let mut cmd = detached(Command::new("ssh"));
     cmd.env("LC_ALL", "C").env("LANG", "C");
     cmd.args(SSH_OPTS);
