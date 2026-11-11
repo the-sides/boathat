@@ -87,13 +87,6 @@ pub fn bar_len_for(cols: usize) -> usize {
     cols.saturating_sub(32).max(4)
 }
 
-/// The NET row only appears once there is traffic worth reporting.
-#[must_use]
-pub fn shows_net(rx_rate: f64, tx_rate: f64) -> bool {
-    rx_rate > crate::consts::NET_VISIBLE_BYTES_PER_SEC
-        || tx_rate > crate::consts::NET_VISIBLE_BYTES_PER_SEC
-}
-
 fn horizontal_rule(n: usize) -> &'static str {
     static RULE_CACHE: &str = concat!(
         "\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}",
@@ -336,6 +329,41 @@ fn push_proc_table(out: &mut Vec<String>, procs: &[Proc], cols: usize, pal: &Pal
     }
 }
 
+/// Network throughput and aggregate CPU share one row. Size the bar from the
+/// remaining display cells so it fits narrow tiles as well as full-width ones.
+fn net_cpu_row(snap: &Snapshot, cols: usize, pal: &PaletteView) -> String {
+    const MIN_CPU_BAR: usize = 4;
+    let net = format!(
+        " {}{}NET{} {}\u{2191} {}{}  {}\u{2193} {}{}",
+        pal.secondary(),
+        pal.bold,
+        pal.reset,
+        pal.primary(),
+        fmt_rate(snap.tx_rate),
+        pal.reset,
+        pal.meter_low(),
+        fmt_rate(snap.rx_rate),
+        pal.reset,
+    );
+    let percent = format!("{:3.0}%", snap.cpu_pct);
+    let fixed = strip_ansi(&net).chars().count() + "  CPU [] ".len() + percent.len();
+    let width = cols.saturating_sub(fixed);
+    // A shorter bar is no longer readable. Compact tiers already retain the
+    // aggregate CPU row above; only a full tile uses this shared NET row.
+    if width < MIN_CPU_BAR {
+        return net;
+    }
+    let color = pal.cpu_bar(snap.cpu_pct);
+    format!(
+        "{net}  {}{}CPU{} {} {color}{percent}{}",
+        pal.primary(),
+        pal.bold,
+        pal.reset,
+        make_bar(snap.cpu_pct, width, color, pal.reset),
+        pal.reset
+    )
+}
+
 /// Render one frame.
 #[must_use]
 pub fn render(
@@ -420,19 +448,8 @@ pub fn render(
                 ));
             }
 
-            if tier == Tier::Full && shows_net(snap.rx_rate, snap.tx_rate) {
-                out.push(format!(
-                    " {}{}NET{} {}\u{2191} {}{}  {}\u{2193} {}{}",
-                    pal.secondary(),
-                    pal.bold,
-                    pal.reset,
-                    pal.primary(),
-                    fmt_rate(snap.tx_rate),
-                    pal.reset,
-                    pal.meter_low(),
-                    fmt_rate(snap.rx_rate),
-                    pal.reset,
-                ));
+            if chrome.sections.net {
+                out.push(net_cpu_row(snap, cols, pal));
             }
 
             if tier >= Tier::Compact {

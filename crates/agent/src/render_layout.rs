@@ -1,6 +1,6 @@
 //! Layout arithmetic and geometry calculations for panel rendering.
 
-use crate::render::{bar_len_for, shows_net, Snapshot};
+use crate::render::{bar_len_for, Snapshot};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CoreGrid {
@@ -97,11 +97,8 @@ impl Chrome {
             snap.cores.len()
         };
         let has_temps = snap.cores.iter().any(|(_, _, t)| t.is_some());
-        let has_net = if tier < Tier::Full {
-            false
-        } else {
-            shows_net(snap.rx_rate, snap.tx_rate)
-        };
+        // Keep the shared NET / total CPU row even with no network traffic.
+        let has_net = tier == Tier::Full;
         let has_disk = if tier <= Tier::Micro {
             false
         } else {

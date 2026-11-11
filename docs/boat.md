@@ -42,7 +42,8 @@ metric sampling. Multitop copies its collector executable to each running boat
 on first connection; it does not install a background service.
 
 Each boat's banner shows overall CPU usage in addition to multitop's per-core
-bars. The footer shows overall fleet CPU, weighted by the reporting machines'
+bars. The NET row also shows a total CPU bar, including when network traffic is
+idle. The footer shows overall fleet CPU, weighted by the reporting machines'
 core counts. For example, two cores at 100% and six idle cores report 25%.
 Samples older than 15 seconds are excluded. The reporting count makes missing
 coverage explicit; unavailable boats are not counted as zero CPU.

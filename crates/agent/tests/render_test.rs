@@ -156,20 +156,44 @@ fn net_shown_when_traffic() {
 }
 
 #[test]
-fn net_omitted_when_idle() {
+fn net_and_total_cpu_remain_visible_when_network_is_idle() {
     let s = Snapshot {
-        rx_rate: 500.0,
-        tx_rate: 500.0,
+        cpu_pct: 25.0,
         ..snap()
     };
-    multitop_testassert::assert_empty!(find(&render(&s, 80, 0, 50, &pal()), "NET"));
+    let rows = find(&render(&s, 80, 0, 50, &pal()), "NET");
+    assert_eq!(rows.len(), 1);
+    let plain = strip_ansi(&rows[0]);
+    assert!(
+        plain.contains("CPU") && plain.contains("25%") && plain.contains('['),
+        "{plain}"
+    );
 }
 
 #[test]
-fn net_threshold_is_strictly_above_1k() {
-    assert!(!shows_net(1024.0, 1024.0));
-    assert!(shows_net(1025.0, 0.0));
-    assert!(shows_net(0.0, 1025.0));
+fn the_shared_net_cpu_row_fits_the_tile_at_every_usage_level() {
+    for cols in [40, 60, 80, 120, 190] {
+        for percent in [0, 25, 100] {
+            let cpu_pct = f64::from(percent);
+            let s = Snapshot {
+                cpu_pct,
+                rx_rate: 2e6,
+                tx_rate: 3e6,
+                ..snap()
+            };
+            let rows = find(&render(&s, cols, 0, bar_len_for(cols), &pal()), "NET");
+            let plain = strip_ansi(&rows[0]);
+            assert!(plain.contains("CPU"), "{cols}: {plain}");
+            assert!(plain.chars().count() <= cols, "{cols}: {plain}");
+            let bar = plain.split('[').nth(1).unwrap().split(']').next().unwrap();
+            if percent == 0 {
+                assert!(!bar.contains('#'));
+            }
+            if percent == 100 {
+                assert!(!bar.contains('.'));
+            }
+        }
+    }
 }
 
 #[test]

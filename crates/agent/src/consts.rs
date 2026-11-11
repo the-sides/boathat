@@ -51,8 +51,6 @@ pub const PROC_BUSY_PCT: f64 = 10.0;
 /// Per-core temperature thresholds, in degrees Celsius.
 pub const CORE_TEMP_HIGH_C: f64 = 75.0;
 pub const CORE_TEMP_WARM_C: f64 = 55.0;
-/// Network traffic below this many bytes per second is not worth a row.
-pub const NET_VISIBLE_BYTES_PER_SEC: f64 = 1024.0;
 
 /// The longest line `proc_read::for_each_line` can hold.
 ///
