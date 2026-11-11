@@ -5,6 +5,16 @@
 use crate::app::App;
 use crate::config::Server;
 
+/// Boat is a session-only dashboard: no saved selection, settings, vault or
+/// upgrade state is loaded. Its host list comes from the Boat CLI.
+pub(super) fn boot_boat_app(servers: &[Server]) -> App {
+    let mut app = App::new(servers.to_vec());
+    app.boat = Some(crate::boat_fleet::State::default());
+    app.background = crate::background::detect();
+    app.rebuild_palette_view();
+    app
+}
+
 /// What the config file contributes at startup: the history cap, the banner
 /// style, the alert thresholds -- and the plaintext passwords it must not
 /// keep. Passwords are loaded on-demand via `Panel::ensure_sudo_password()`
@@ -176,6 +186,15 @@ mod tests {
     use crate::config::Server;
     use multitop_agent::adapt::MIN_TEXT_CONTRAST;
     use multitop_agent::surface::Rgb;
+
+    #[test]
+    fn boat_boot_has_no_persistent_config_or_vault() {
+        let app = super::boot_boat_app(&[crate::boat::waiting("Boat")]);
+        assert!(app.boat.is_some());
+        assert!(app.config_path.is_none());
+        assert!(app.vault.is_none());
+        assert_eq!(app.saved_filters, [] as [String; 0]);
+    }
 
     /// A near-white terminal: the case the whole feature exists for.
     const LIGHT: Rgb = Rgb::new(252, 252, 250);

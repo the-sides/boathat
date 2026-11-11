@@ -1,5 +1,35 @@
 use multitop::boat::{identity, offline, parse_inventory, transport};
 
+#[tokio::test]
+async fn selecting_a_boat_never_writes_dashboard_state() {
+    let _guard = multitop::password_store::lock_for_test_async().await;
+    multitop::password_store::enable_mock_store();
+    multitop::password_store::clear_mock_store();
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("missing/config.toml");
+    let mut app = multitop::app::App::new(vec![multitop::boat::waiting("Boat")]);
+    app.boat = Some(multitop::boat_fleet::State::default());
+    // Even an accidentally assigned config path cannot make a Boat selection
+    // persist. The real Boat boot does not assign a path in the first place.
+    app.config_path = Some(config.clone());
+    let (tx, _) = tokio::sync::mpsc::channel(1);
+    let (_, rx) = tokio::sync::watch::channel((120, 40));
+    let mut tasks = multitop::run::Tasks::new(1);
+    multitop::run::handle_key(
+        crossterm::event::KeyEvent::new(
+            crossterm::event::KeyCode::Char('1'),
+            crossterm::event::KeyModifiers::NONE,
+        ),
+        &mut app,
+        (120, 40),
+        &std::sync::Arc::new(rx),
+        &tx,
+        &mut tasks,
+    );
+    assert!(!config.parent().unwrap().exists());
+    assert_eq!(app.panels[0].notes, [] as [String; 0]);
+}
+
 #[test]
 fn boat_identity_survives_state_and_address_changes() {
     let running = parse_inventory(br#"{"sandboxes":[{"id":"bx_alpha","name":"Build box","state":"idle","sshEndpoint":"old:123"}]}"#).unwrap();

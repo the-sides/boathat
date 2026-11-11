@@ -264,6 +264,9 @@ impl App {
     }
 
     pub(crate) fn persist_state(&mut self) {
+        if self.boat.is_some() {
+            return;
+        }
         let Some(path) = self.config_path.clone() else {
             return;
         };

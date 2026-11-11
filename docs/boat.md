@@ -53,7 +53,7 @@ and `q` to quit. Click a stopped tile to dismiss it.
 ## Scope
 
 Boat mode is the interactive dashboard; it cannot be combined with static host,
-local, headless-server or Ops-poller modes. Its UI state is separate from the
-usual static-host dashboard. Boat discovery owns its host list, so edits made in
-multitop Settings do not change Boat and are replaced by the next discovery.
+local, headless-server or Ops-poller modes. Selection, view preferences, themes
+and graph history are session-only: they are neither loaded nor saved to disk.
+Boat discovery owns its host list, so static-host Settings are unavailable.
 Boat billing and snapshot metrics are not collected by the SSH system monitor.

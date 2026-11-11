@@ -5,6 +5,12 @@ use crossterm::event::KeyCode;
 use secrecy::{ExposeSecret, SecretString};
 
 pub fn open(app: &mut App, selected: usize, resume_upgrade: bool) -> Vec<(usize, Server)> {
+    if app.boat.is_some() {
+        for panel in &mut app.panels {
+            panel.note("Boat manages these hosts. Dashboard settings are session-only.".into());
+        }
+        return Vec::new();
+    }
     if !app.panels.is_empty() {
         let idx = selected.min(app.panels.len() - 1);
         app.password_manager = Some(PasswordManager::new(idx, resume_upgrade));

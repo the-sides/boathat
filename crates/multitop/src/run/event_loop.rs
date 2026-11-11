@@ -291,10 +291,11 @@ where
     #[cfg(not(unix))]
     let mut signals: Option<()> = None;
 
-    let mut app = boot_app(&servers, &config_path, initial_theme.as_deref());
-    if boat_feed.is_some() {
-        app.boat = Some(crate::boat_fleet::State::default());
-    }
+    let mut app = if boat_feed.is_some() {
+        super::boot::boot_boat_app(&servers)
+    } else {
+        boot_app(&servers, &config_path, initial_theme.as_deref())
+    };
     let (tx, mut rx) = mpsc::channel::<Msg>(512);
     let mut tasks = Tasks::new(servers.len());
 
