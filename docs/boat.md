@@ -27,7 +27,7 @@ organization scope, as for the regular CLI.
 - New and resumed boats inherit the current fleet stats or graph view, including
   the graph zoom. Existing graph history stays intact when the fleet changes.
 - Running boats automatically appear. A visible boat that stops keeps its tile
-  with a scaled ASCII `DEAD` banner until you click it. If it resumes, its tile
+  with a centered ASCII `DEAD` banner that scales to fit without distortion until you click it. If it resumes, its tile
   reconnects automatically.
 - Clicking a stopped tile dismisses it for this dashboard session. A later resume
   makes it visible again. Deleted boats disappear on the next discovery.

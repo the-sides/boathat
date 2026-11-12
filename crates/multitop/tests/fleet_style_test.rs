@@ -279,7 +279,7 @@ fn a_wide_ten_machine_grid_shows_full_dashboard_sections_without_font_zoom() {
 }
 
 #[test]
-fn inactive_boat_fills_its_tile_with_dead_lettering_even_with_cached_graphs() {
+fn inactive_boat_shows_dead_lettering_instead_of_cached_graphs() {
     let _guard = multitop::password_store::lock_for_test();
     multitop::password_store::enable_mock_store();
     let mut app = fixture();
@@ -287,7 +287,7 @@ fn inactive_boat_fills_its_tile_with_dead_lettering_even_with_cached_graphs() {
     app.panels[0].mode = Mode::Graphs;
     for (width, height) in [(160, 50), (80, 18), (40, 12)] {
         let output = text(&draw(&mut app, width, height));
-        assert!(output.matches('#').count() > usize::from(width) * usize::from(height) / 5);
+        assert!(output.matches('#').count() > 20);
         assert!(!output.contains("MEM") && !output.contains("processes"));
         assert!(!output.contains("Not running"));
         assert_eq!(app.panels[0].scroll_offset, 0);
@@ -303,4 +303,24 @@ fn inventory_loading_placeholder_is_not_marked_dead() {
     app.boat = Some(boat_fleet::State::default());
     let output = text(&draw(&mut app, 80, 24));
     assert!(!output.contains("DEAD") && !output.contains('#'));
+}
+
+#[test]
+fn dead_lettering_is_contained_and_centered_in_a_tall_narrow_tile() {
+    let _guard = multitop::password_store::lock_for_test();
+    multitop::password_store::enable_mock_store();
+    let mut app = fixture();
+    app.panels[0].server.host = "boat-offline:bx_demo".into();
+    let screen = draw(&mut app, 48, 34);
+    let painted: Vec<_> = (1..32)
+        .filter(|&y| (1..47).any(|x| screen[(x, y)].symbol() == "#"))
+        .collect();
+    assert_eq!(
+        painted.len(),
+        9,
+        "the approved contained word is nine rows tall"
+    );
+    let above = painted[0] - 1;
+    let below = 31 - painted.last().unwrap();
+    assert!(above.abs_diff(below) <= 1);
 }
