@@ -214,3 +214,55 @@ fn overall_cpu_is_core_weighted_and_excludes_missing_or_expired_samples() {
     );
     assert!(multitop::boat_fleet::summary(&app).contains("0.0% (1/2 reporting)"));
 }
+
+#[test]
+fn boat_titles_include_reported_size_for_running_and_stopped_machines() {
+    let boats = parse_inventory(
+        br#"{"sandboxes":[
+        {"id":"bx_a","name":"Demo build","state":"idle","type":"large"},
+        {"id":"bx_b","name":"Demo tests","state":"stopped","type":"xlarge"},
+        {"id":"bx_c","name":"Demo default","state":"idle","type":"default"},
+        {"id":"bx_d","name":"Demo missing","state":"idle"},
+        {"id":"bx_e","name":"Demo escaped","state":"idle","type":"large\u001b\n"}
+    ]}"#,
+    )
+    .unwrap();
+    for (boat, size) in boats
+        .iter()
+        .zip(["large", "xlarge", "default", "unknown", "large"])
+    {
+        let name = boat.name.as_deref().unwrap();
+        assert!(name.ends_with(&format!("SIZE {size}")), "{name:?}");
+        assert!(!name.chars().any(char::is_control));
+    }
+}
+
+#[test]
+fn long_boat_names_keep_size_and_swap_visible_in_tile_titles() {
+    let _guard = multitop::password_store::lock_for_test();
+    multitop::password_store::enable_mock_store();
+    let servers = parse_inventory(br#"{"sandboxes":[{"id":"bx_demo","name":"Very long demo machine name for an integration test with a distinctive suffix","state":"idle","type":"xlarge"}]}"#).unwrap();
+    let mut app = multitop::app::App::new(servers);
+    app.boat = Some(multitop::boat_fleet::State::default());
+    app.apply(multitop::app::Msg::Packet {
+        panel: 0,
+        gen: 0,
+        epoch: 0,
+        dims: (78, 38),
+        payload: multitop_agent::proto::Payload::Monitor(multitop_agent::render::Snapshot {
+            swap: Some(multitop_agent::proc::Usage::new(8 << 30, 1 << 30)),
+            ..multitop_agent::render::Snapshot::default()
+        }),
+    });
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 40)).unwrap();
+    terminal.draw(|f| multitop::ui::draw(f, &mut app)).unwrap();
+    let text: String = terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect();
+    assert!(text.contains("SIZE xlarge"));
+    assert!(text.contains("SWAP 1.0GiB/8.0GiB"));
+}

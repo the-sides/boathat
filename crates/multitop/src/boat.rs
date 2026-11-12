@@ -74,6 +74,8 @@ struct Sandbox {
     id: String,
     name: Option<String>,
     state: String,
+    #[serde(rename = "type")]
+    size: Option<String>,
 }
 
 /// Parse the complete CLI response, refusing partial or ambiguous inventories.
@@ -108,9 +110,14 @@ pub fn parse_inventory(bytes: &[u8]) -> Result<Vec<Server>, String> {
         // Names are remote text, never shell commands or terminal escapes.
         let name: String = name.chars().filter(|c| !c.is_control()).collect();
         let state: String = sandbox.state.chars().filter(|c| !c.is_control()).collect();
+        let size = sandbox
+            .size
+            .map(|size| size.chars().filter(|c| !c.is_control()).collect::<String>())
+            .filter(|size| !size.trim().is_empty())
+            .unwrap_or_else(|| "unknown".into());
         servers.push(Server {
             host: format!("{prefix}{}", sandbox.id),
-            name: Some(format!("{name} [{state}]")),
+            name: Some(format!("{name} [{state}] | SIZE {size}")),
             port: crate::config::DEFAULT_PORT,
             user: String::new(),
             upgrade_cmd: None,
