@@ -86,6 +86,18 @@ pub(super) fn reconcile(app: &mut App, update: Result<Vec<Server>, String>) -> b
         .map(str::to_owned);
     app.panels_epoch += 1;
     let generation = app.panels.iter().map(|p| p.gen).max().unwrap_or(0) + 1;
+    // View switches apply to the fleet. The permanent local tile keeps that
+    // choice even when the selected boat stops and shows its offline status.
+    let fleet_mode = app
+        .panels
+        .iter()
+        .find(|p| crate::ssh::is_local(&p.server))
+        .or_else(|| {
+            app.panels
+                .iter()
+                .find(|p| !crate::boat::offline(&p.server.host))
+        })
+        .map_or(Mode::Monitor, |p| p.mode.for_startup());
     let mut old = std::mem::take(&mut app.panels);
     for server in servers {
         let previous = old.iter().position(|p| {
@@ -95,7 +107,11 @@ pub(super) fn reconcile(app: &mut App, update: Result<Vec<Server>, String>) -> b
         let changed = panel.server.host != server.host;
         panel.server = server;
         panel.gen = generation;
-        panel.mode = panel.mode.for_startup();
+        panel.mode = if previous.is_none() || changed {
+            fleet_mode
+        } else {
+            panel.mode.for_startup()
+        };
         panel.last_upgrade.set_cap(app.upgrade_history_lines);
         if crate::boat::offline(&panel.server.host) {
             panel.last_monitor = None;
@@ -187,6 +203,74 @@ mod tests {
             epoch: old_epoch,
             lines: vec!["old boat".into()],
         }));
+    }
+
+    #[test]
+    fn new_boats_inherit_graphs_or_stats_without_losing_existing_history() {
+        for mode in [Mode::Monitor, Mode::Graphs] {
+            let mut app = App::new(vec![crate::boat::local_server()]);
+            app.boat = Some(crate::boat_fleet::State::default());
+            assert!(reconcile(&mut app, Ok(fleet(&[("bx_a", "idle")]))));
+            if mode == Mode::Graphs {
+                app.toggle_graphs((120, 40));
+            }
+            app.graph_zoom = 3;
+            app.panels[1].history.cpu.push(55.0);
+            let history = app.panels[1].history.clone();
+            assert!(reconcile(
+                &mut app,
+                Ok(fleet(&[("bx_a", "idle"), ("bx_b", "idle")]))
+            ));
+            assert!(app.panels.iter().all(|p| p.mode == mode));
+            assert_eq!(app.graph_zoom, 3);
+            assert_eq!(app.panels[1].history, history);
+            let index = app
+                .panels
+                .iter()
+                .position(|p| p.server.host == "boat:bx_b")
+                .unwrap();
+            assert!(app.apply(crate::app::Msg::Packet {
+                panel: index,
+                epoch: app.panels_epoch,
+                gen: app.panels[index].gen,
+                dims: (100, 30),
+                payload: multitop_agent::proto::Payload::Monitor(
+                    multitop_agent::render::Snapshot {
+                        cpu_pct: 25.0,
+                        ..multitop_agent::render::Snapshot::default()
+                    }
+                ),
+            }));
+            assert_eq!(app.panels[index].mode, mode);
+            let mut terminal =
+                ratatui::Terminal::new(ratatui::backend::TestBackend::new(300, 80)).unwrap();
+            terminal.draw(|f| crate::ui::draw(f, &mut app)).unwrap();
+            let (tiles, _) = crate::ui::regions(ratatui::layout::Rect::new(0, 0, 300, 80), 3);
+            let tile = tiles[index];
+            let buffer = terminal.backend().buffer();
+            let text: String = (tile.y..tile.bottom())
+                .flat_map(|y| (tile.x..tile.right()).map(move |x| (x, y)))
+                .map(|point| buffer[point].symbol())
+                .collect();
+            assert!(text.contains("CPU") && text.contains("MEM"));
+            assert_eq!(text.contains("processes"), mode == Mode::Monitor);
+        }
+    }
+
+    #[test]
+    fn resumed_boat_inherits_graph_view_even_if_offline_tile_is_selected() {
+        let mut app = App::new(vec![crate::boat::local_server()]);
+        app.boat = Some(crate::boat_fleet::State::default());
+        assert!(reconcile(&mut app, Ok(fleet(&[("bx_a", "idle")]))));
+        app.toggle_graphs((120, 40));
+        app.selected_panel = 1;
+        assert!(reconcile(&mut app, Ok(fleet(&[("bx_a", "stopped")]))));
+        assert_eq!(app.panels[1].mode, Mode::Monitor);
+        assert!(reconcile(
+            &mut app,
+            Ok(fleet(&[("bx_a", "idle"), ("bx_b", "idle")]))
+        ));
+        assert!(app.panels.iter().all(|p| p.mode == Mode::Graphs));
     }
 
     #[test]

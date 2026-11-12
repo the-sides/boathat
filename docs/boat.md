@@ -24,6 +24,8 @@ organization scope, as for the regular CLI.
 - Discovery reads `boat list --all --json` every 15 seconds after the preceding
   request completes. Discovery has a 12-second timeout and never overlaps itself.
 - Boats already stopped at launch are collapsed into the footer count.
+- New and resumed boats inherit the current fleet stats or graph view, including
+  the graph zoom. Existing graph history stays intact when the fleet changes.
 - Running boats automatically appear. A visible boat that stops keeps its tile
   until you click it. If it resumes, its tile reconnects automatically.
 - Clicking a stopped tile dismisses it for this dashboard session. A later resume
