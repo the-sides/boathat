@@ -70,6 +70,11 @@ impl App {
     /// to dispatch on a blocking worker (`dispatch_credential_loads`) rather
     /// than read mid-keystroke.
     fn load_known_passwords(&mut self) -> Vec<(usize, Server)> {
+        // Fleet monitoring delegates authentication to the Boat CLI and has no
+        // upgrade commands. It must never consult the unrelated OS store.
+        if self.boat.is_some() {
+            return Vec::new();
+        }
         // `vault_unlocked()` rather than matching the state here: one place
         // decides what "unlocked" means, and a second copy of that match is a
         // second thing to keep in step with the state machine. The panels are

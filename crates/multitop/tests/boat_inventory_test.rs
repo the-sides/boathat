@@ -73,6 +73,29 @@ async fn selecting_a_boat_never_writes_dashboard_state() {
 }
 
 #[test]
+fn boat_upgrade_view_never_requests_credentials() {
+    let _guard = multitop::password_store::lock_for_test();
+    multitop::password_store::enable_mock_store();
+    multitop::password_store::clear_mock_store();
+    let mut app = multitop::app::App::new(vec![
+        multitop::boat::local_server(),
+        parse_inventory(br#"{"sandboxes":[{"id":"bx_alpha","state":"idle"}]}"#)
+            .unwrap()
+            .remove(0),
+    ]);
+    app.boat = Some(multitop::boat_fleet::State::default());
+    assert_eq!(
+        app.enter_upgrade_view(),
+        [] as [(usize, multitop::config::Server); 0]
+    );
+    assert_eq!(app.run_upgrade(), [] as [multitop::app::Command; 0]);
+    assert!(app
+        .panels
+        .iter()
+        .all(multitop::panel::Panel::needs_credential_load));
+}
+
+#[test]
 fn boat_identity_survives_state_and_address_changes() {
     let running = parse_inventory(br#"{"sandboxes":[{"id":"bx_alpha","name":"Build box","state":"idle","sshEndpoint":"old:123"}]}"#).unwrap();
     let stopped = parse_inventory(br#"{"sandboxes":[{"id":"bx_alpha","name":"Build box","state":"stopped","sshEndpoint":null}]}"#).unwrap();
