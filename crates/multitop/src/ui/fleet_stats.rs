@@ -15,6 +15,7 @@ use ratatui::{
     Frame,
 };
 
+use super::layout::{FULL_METRIC_HEIGHT, FULL_METRIC_WIDTH};
 use super::meters::{self, block, meter, plot, split_x, split_y, style};
 
 const CPU_MIN_HEIGHT: u16 = 6;
@@ -27,11 +28,9 @@ const CPU_PERCENT_WIDTH: u16 = 6;
 const WIDE_TABLE: u16 = 110;
 const PID_WIDTH: u16 = 7;
 const MEM_WIDTH: u16 = 10;
-const MIN_FULL_HEIGHT: u16 = 20;
-const MIN_FULL_WIDTH: u16 = 62;
 
 pub fn draw(f: &mut Frame, panel: &Panel, snap: &Snapshot, area: Rect, pal: &PaletteView) -> usize {
-    if area.height < MIN_FULL_HEIGHT || area.width < MIN_FULL_WIDTH {
+    if area.height < FULL_METRIC_HEIGHT || area.width < FULL_METRIC_WIDTH {
         return super::fleet_compact::draw(f, panel, snap, area, pal);
     }
     let cpu_height = (area.height / 3).clamp(CPU_MIN_HEIGHT, CPU_MAX_HEIGHT);

@@ -221,10 +221,14 @@ mod tests {
             &mut app,
             Ok(fleet(&[("bx_a", "idle"), ("bx_b", "stopped")]))
         ));
+        let (tiles, _) = crate::ui::regions(
+            ratatui::layout::Rect::new(0, 0, 160, 40),
+            app.visible_panes(),
+        );
         let click = MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
-            column: 2,
-            row: 22,
+            column: tiles[1].x + 2,
+            row: tiles[1].y + 2,
             modifiers: KeyModifiers::NONE,
         };
         assert!(!dismiss(&mut app, click, Some((160, 40))));

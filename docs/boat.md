@@ -47,7 +47,9 @@ visible when no boats are running. The fleet CPU footer counts boats only.
 
 Tiles use rounded btop-inspired frames, an aggregate CPU meter and per-core
 meters, a CPU history graph, memory history, disk/swap meters and a process
-table. NET is a compact right-aligned readout. Short panes use fixed compact
+table. The grid automatically adds columns as the terminal widens, preferring
+layouts that fit the full dashboard. It balances tile width and height, and
+the last row fills its available width. NET is a compact right-aligned readout. Short panes use fixed compact
 metric rows and give the remaining space to processes. Metric views never
 scroll: CPU and memory graphs resize to each tile, including after a resize or
 fleet change. Only process lists scroll; wheel/down moves further down the list,

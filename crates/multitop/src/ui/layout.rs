@@ -13,6 +13,38 @@ pub const SIDE_MARGIN: u16 = 1;
 pub const MIN_AGENT_COLS: u16 = 40;
 pub const MIN_AGENT_ROWS: u16 = 4;
 
+/// Interior needed by the full dashboard, shared with its renderer. A grid
+/// candidate must also leave room for the outer tile's two border cells.
+pub(super) const FULL_METRIC_WIDTH: u16 = 62;
+pub(super) const FULL_METRIC_HEIGHT: u16 = 20;
+const TILE_BORDER: u16 = 2;
+const PREFERRED_TILE_WIDTH: u32 = 96;
+const PREFERRED_TILE_HEIGHT: u32 = 26;
+
+fn grid_columns(body: Rect, panels: usize) -> usize {
+    let limit = panels.min(usize::from(body.width / MIN_AGENT_COLS).max(1));
+    (1..=limit)
+        .max_by_key(|&cols| {
+            let rows = panels.div_ceil(cols);
+            let width = body.width / u16::try_from(cols).unwrap_or(u16::MAX);
+            let height = body.height / u16::try_from(rows).unwrap_or(u16::MAX);
+            let full = width >= FULL_METRIC_WIDTH + TILE_BORDER
+                && height >= FULL_METRIC_HEIGHT + TILE_BORDER;
+            // Maximise the smaller dimension relative to a readable dashboard.
+            // Prefer full tiles whenever possible, then a balanced shape rather
+            // than either very wide strips or narrow towers.
+            let scale = (u32::from(width) * PREFERRED_TILE_HEIGHT)
+                .min(u32::from(height) * PREFERRED_TILE_WIDTH);
+            (
+                full,
+                scale,
+                std::cmp::Reverse(rows * cols - panels),
+                std::cmp::Reverse(cols),
+            )
+        })
+        .unwrap_or(1)
+}
+
 /// Split the screen into one region per panel plus the key bar.
 #[must_use]
 pub fn regions(area: Rect, panels: usize) -> (Vec<Rect>, Rect) {
@@ -21,32 +53,18 @@ pub fn regions(area: Rect, panels: usize) -> (Vec<Rect>, Rect) {
     if panels == 0 {
         return (Vec::new(), keybar);
     }
-    if panels == 1 {
-        return (vec![body], keybar);
-    }
-    if panels == 2 {
-        let rows = Layout::vertical([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)]).split(body);
-        return (rows.to_vec(), keybar);
-    }
-
-    // For panels >= 3, use a 2-column grid layout
-    let grid_cols: u32 = 2;
-    // One row per PAIR of panels, not one row per panel.
-    let rows = panels.div_ceil(2);
+    let columns = grid_columns(body, panels);
+    let rows = panels.div_ceil(columns);
     let grid_rows: u32 = u32::try_from(rows).unwrap_or(u32::MAX);
     let v_chunks = Layout::vertical(vec![Constraint::Ratio(1, grid_rows); rows]).split(body);
     let mut rects = Vec::with_capacity(panels);
     for (r_idx, row_rect) in v_chunks.iter().enumerate() {
-        let h_chunks = Layout::horizontal([
-            Constraint::Ratio(1, grid_cols),
-            Constraint::Ratio(1, grid_cols),
-        ])
-        .split(*row_rect);
-        for (c_idx, col_rect) in h_chunks.iter().enumerate() {
-            if r_idx * 2 + c_idx < panels {
-                rects.push(*col_rect);
-            }
-        }
+        // The last row shares its whole width among its remaining tiles.
+        let row_count = (panels - r_idx * columns).min(columns);
+        let grid_cols = u32::try_from(row_count).unwrap_or(u32::MAX);
+        let h_chunks =
+            Layout::horizontal(vec![Constraint::Ratio(1, grid_cols); row_count]).split(*row_rect);
+        rects.extend(h_chunks.iter().copied());
     }
     (rects, keybar)
 }
@@ -160,23 +178,19 @@ mod agent_dims_tests {
     /// the pane. Stated because the test above would otherwise read as a
     /// universal claim, and it is not one.
     ///
-    /// Twelve rows of terminal, two panels: six and five rows each, and the
-    /// minimum is floored to four -- which happens to fit. Eight rows is where
-    /// it stops: three rows a pane, four published, and the agent renders a
-    /// row the pane cannot show. That is the intended trade (a geometry below
-    /// the floor is worse than a clipped row) and the only case where the
-    /// published size is larger than the space, so it is named rather than left
-    /// for the next reader to trip over.
+    /// A four-row terminal has three body rows. Even a single horizontal row
+    /// of tiles is shorter than the four rows the agent needs to render. The
+    /// published size is then the floor rather than the available space.
     #[test]
     fn the_floor_can_exceed_a_pane_that_is_tiny() {
-        let (grid, _) = regions(Rect::new(0, 0, 200, 8), 2);
+        let (grid, _) = regions(Rect::new(0, 0, 80, 4), 2);
         let shortest = grid.iter().map(|p| p.height).min().unwrap_or(0);
         assert_eq!(
             shortest, 3,
-            "the premise: 8 rows cannot give two panels four each"
+            "the premise: three body rows cannot fit the four-row floor"
         );
         assert_eq!(
-            agent_dims(size(200, 8), 2).1,
+            agent_dims(size(80, 4), 2).1,
             MIN_AGENT_ROWS,
             "and the published height is the floor, not the pane"
         );

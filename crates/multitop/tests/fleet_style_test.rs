@@ -180,7 +180,7 @@ fn short_bottom_graph_tile_always_fits_cpu_and_memory_without_scroll() {
     app.rerender_all((158, 32));
     for height in [36, 40, 42, 44, 50] {
         app.panels[1].scroll_offset = 15;
-        let screen = draw(&mut app, 160, height);
+        let screen = draw(&mut app, 100, height);
         let (areas, _) = multitop::ui::regions(screen.area, 2);
         for area in areas {
             let output: String = (area.y..area.bottom())
@@ -257,5 +257,23 @@ fn graph_headings_survive_fleet_growth_notices_and_uneven_resizes() {
             }
             assert!(app.panels.iter().all(|panel| panel.scroll_offset == 0));
         }
+    }
+}
+
+#[test]
+fn a_wide_ten_machine_grid_shows_full_dashboard_sections_without_font_zoom() {
+    let _guard = multitop::password_store::lock_for_test();
+    multitop::password_store::enable_mock_store();
+    let mut app = fixture();
+    let prototype = app.panels[0].clone();
+    app.panels = vec![prototype; 10];
+    for (i, panel) in app.panels.iter_mut().enumerate() {
+        panel.server.name = Some(format!("Demo machine {i}"));
+    }
+    for width in [300, 400, 600] {
+        let output = text(&draw(&mut app, width, 80));
+        assert_eq!(output.matches("disks / swap").count(), 10, "width {width}");
+        assert_eq!(output.matches("Used  ").count(), 10, "width {width}");
+        assert_eq!(output.matches("processes").count(), 10, "width {width}");
     }
 }
