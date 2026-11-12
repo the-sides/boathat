@@ -277,3 +277,30 @@ fn a_wide_ten_machine_grid_shows_full_dashboard_sections_without_font_zoom() {
         assert_eq!(output.matches("processes").count(), 10, "width {width}");
     }
 }
+
+#[test]
+fn inactive_boat_fills_its_tile_with_dead_lettering_even_with_cached_graphs() {
+    let _guard = multitop::password_store::lock_for_test();
+    multitop::password_store::enable_mock_store();
+    let mut app = fixture();
+    app.panels[0].server = boat::parse_inventory(br#"{"sandboxes":[{"id":"bx_demo","name":"Demo stopped","state":"stopping","type":"large"}]}"#).unwrap().remove(0);
+    app.panels[0].mode = Mode::Graphs;
+    for (width, height) in [(160, 50), (80, 18), (40, 12)] {
+        let output = text(&draw(&mut app, width, height));
+        assert!(output.matches('#').count() > usize::from(width) * usize::from(height) / 5);
+        assert!(!output.contains("MEM") && !output.contains("processes"));
+        assert!(!output.contains("Not running"));
+        assert_eq!(app.panels[0].scroll_offset, 0);
+    }
+    assert!(text(&draw(&mut app, 24, 8)).contains("DEAD"));
+}
+
+#[test]
+fn inventory_loading_placeholder_is_not_marked_dead() {
+    let _guard = multitop::password_store::lock_for_test();
+    multitop::password_store::enable_mock_store();
+    let mut app = App::new(vec![boat::waiting("Discovering boats")]);
+    app.boat = Some(boat_fleet::State::default());
+    let output = text(&draw(&mut app, 80, 24));
+    assert!(!output.contains("DEAD") && !output.contains('#'));
+}

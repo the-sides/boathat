@@ -1,3 +1,4 @@
+mod dead;
 mod draw;
 mod fleet;
 mod fleet_compact;

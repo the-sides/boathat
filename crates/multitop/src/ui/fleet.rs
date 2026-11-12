@@ -64,6 +64,12 @@ pub fn draw(f: &mut Frame, app: &App, index: usize, area: Rect) -> Option<usize>
     }
     let inner = border.inner(area);
     f.render_widget(border, area);
+    if crate::boat::offline(&panel.server.host)
+        && crate::boat::identity(&panel.server.host) != Some("waiting")
+    {
+        super::dead::draw(f, inner, &pal);
+        return Some(0);
+    }
     if panel.mode == Mode::Graphs && !panel.history.is_empty() {
         let content = metric_area(f, panel, inner, &pal, snapshot.is_none());
         draw_graphs(f, panel, content, &pal, app.graph_zoom);
