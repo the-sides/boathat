@@ -16,6 +16,18 @@ use crate::history::History;
 /// Dot columns per braille cell, and dot rows per braille cell.
 const DOT_COLS: usize = 2;
 const DOT_ROWS: usize = 4;
+const GRADIENT_BANDS: usize = 3;
+
+/// Height tint: a pale crest above the theme's primary and healthy colours.
+/// Uses the adapted palette, including its monochrome/light-terminal variants.
+#[must_use]
+pub fn height_ink(pal: &PaletteView, level: usize, levels: usize) -> &str {
+    match level.saturating_mul(GRADIENT_BANDS) / levels.max(1) {
+        0 => pal.meter_low(),
+        1 => pal.primary(),
+        _ => pal.text(),
+    }
+}
 
 /// The braille block starts here; the low eight bits of the offset are the
 /// dots.
@@ -145,8 +157,12 @@ fn plot(spec: &Plot<'_>, cols: usize, rows: usize, pal: &PaletteView) -> Vec<Str
         ));
         return out;
     }
-    for line in braille_rows(samples, max, cols, plot_rows) {
-        out.push(format!("{colour}{line}{}", pal.reset));
+    for (row, line) in braille_rows(samples, max, cols, plot_rows)
+        .into_iter()
+        .enumerate()
+    {
+        let tint = height_ink(pal, plot_rows - 1 - row, plot_rows);
+        out.push(format!("{tint}{line}{}", pal.reset));
     }
     out
 }

@@ -1,7 +1,10 @@
 mod draw;
+mod fleet;
+mod fleet_stats;
 mod keybar;
 mod keybar_confirm;
 mod layout;
+mod meters;
 mod windowing;
 
 pub use crate::refit::{refit_header, refit_line};

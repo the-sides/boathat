@@ -4,7 +4,32 @@ A live Boat fleet dashboard, built on [multitop](https://github.com/ztomer/multi
 Run `./boathat` for automatic Boat discovery and a live SSH metrics grid.
 See [Boat fleet dashboard](docs/boat.md) for setup and behavior.
 
+```sh
+git clone https://github.com/the-sides/boathat.git
+cd boathat
+./build.sh --backend zigbuild
+./boathat
+```
+
+Requires Rust, the build backend's tools, and an authenticated Boat CLI.
+No GitHub App is required. Inventory refreshes every 15 seconds; metrics stream
+over SSH. Running boats and the local machine get live tiles. Stopped boats
+start collapsed; boats that stop during the session stay visible until clicked.
+
+The dashboard uses rounded frames, shaded CPU meters, height-tinted history
+graphs, memory, root disk, swap, and process tables. `G` opens CPU/memory graphs;
+`s` returns to stats. `z` focuses a tile and `Esc` returns to the fleet.
+Boat mode does not save fleet identities, graph history, or UI state, and never
+creates, resumes, stops, or deletes boats. Boat authentication stays with its CLI.
+
+The project is named **boathat**; `toat` can be a shell alias for `boathat`.
+Rust crate/binary names remain `multitop` internally for compatibility with the
+upstream collector and build tooling.
+
 ## Upstream multitop
+
+The reference below describes the upstream project and its separate install
+and configuration options. Its Homebrew package does not install boathat.
 
 SSH into multiple servers and watch a compact real-time system monitor
 for each one, side by side in a single terminal. Written in Rust

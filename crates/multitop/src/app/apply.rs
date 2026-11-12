@@ -193,16 +193,26 @@ impl App {
         }
     }
 
-    fn on_frame(&mut self, panel: usize, epoch: u64, lines: Vec<String>) -> bool {
+    fn on_frame(&mut self, panel: usize, epoch: u64, mut lines: Vec<String>) -> bool {
         if epoch != self.panels_epoch {
             return false;
         }
         let Some(p) = self.panels.get_mut(panel) else {
             return false;
         };
+        if let Some(fleet) = &mut self.boat {
+            // These are connection/status frames, not live measurements.
+            // Invalidate freshness immediately and reserve the title row so a
+            // one-line error cannot be overwritten by the machine's name.
+            let id = crate::boat::identity(&p.server.host).unwrap_or(&p.server.host);
+            fleet.samples.remove(id);
+            if lines.first().is_some_and(|line| !line.is_empty()) {
+                lines.insert(0, String::new());
+            }
+        }
         p.last_frame = Some(lines);
         // Only paint it if stats is what the user is looking at.
-        if p.mode == Mode::Monitor {
+        if p.mode == Mode::Monitor || (self.boat.is_some() && p.mode == Mode::Graphs) {
             p.show_last_frame(&self.palette_view);
             true
         } else {

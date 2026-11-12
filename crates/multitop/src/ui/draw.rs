@@ -119,6 +119,10 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Collected rather than written in the loop, which holds `app` immutably.
     let mut effective_offsets: Vec<(usize, usize)> = Vec::with_capacity(shown.len());
     for (&idx, area) in shown.iter().zip(&panel_areas) {
+        if let Some(offset) = super::fleet::draw(f, app, idx, *area) {
+            effective_offsets.push((idx, offset));
+            continue;
+        }
         let panel = &app.panels[idx];
         let inner = Rect {
             x: area.x + SIDE_MARGIN,

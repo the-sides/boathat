@@ -45,19 +45,25 @@ A permanent **This Mac** tile shows this machine's CPU, memory, disk, network,
 processes and swap, using the native collector directly without SSH. It stays
 visible when no boats are running. The fleet CPU footer counts boats only.
 
-The CPU bar aligns with the memory and disk bars; NET occupies their right-hand
-value column. Titles show **SWAP used/total**. On Linux, total is configured swap
+Tiles use rounded btop-inspired frames, an aggregate CPU meter and per-core
+meters, a CPU history graph, memory history, disk/swap meters and a process
+table. NET is a compact right-aligned readout. Small panes fall back to the
+compact renderer. Titles show **SWAP used/total**. On Linux, total is configured swap
 capacity. On macOS, it is the currently allocated swap space, which can grow;
 it is not a hard maximum. Unavailable readings are marked explicitly.
 
-Graph view contains CPU and memory only, with no network graphs.
+Graph view contains CPU and memory only, with no network display. Graph dots
+change color with height, from the theme's healthy color through its primary
+color to a pale crest. Missing history stays blank. Zoom groups samples by
+peak so short CPU spikes remain visible.
 
 The footer shows overall fleet CPU, weighted by the reporting machines'
 core counts. For example, two cores at 100% and six idle cores report 25%.
 Samples older than 15 seconds are excluded. The reporting count makes missing
 coverage explicit; unavailable boats are not counted as zero CPU.
 
-Use `G` for graphs, `z` or Enter to zoom a tile, `/` to filter by boat name or ID,
+Use `G` for graphs, `s` to return to stats, `z` or Enter to focus a tile,
+`Esc` to return to the fleet, `/` to filter by boat name or ID,
 and `q` to quit. Click a stopped tile to dismiss it.
 
 ## Scope
