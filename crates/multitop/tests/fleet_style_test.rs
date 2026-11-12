@@ -163,3 +163,99 @@ fn long_names_keep_swap_visible_and_process_controls_are_removed() {
     assert!(output.contains("worker"));
     assert!(!output.contains('\u{1b}') && !output.contains('\r'));
 }
+
+#[test]
+fn short_bottom_graph_tile_always_fits_cpu_and_memory_without_scroll() {
+    let _guard = multitop::password_store::lock_for_test();
+    multitop::password_store::enable_mock_store();
+    let mut app = fixture();
+    let mut second = app.panels[0].clone();
+    second.server.name = Some("Demo boat [idle]".into());
+    app.panels.push(second);
+    for panel in &mut app.panels {
+        panel.mode = Mode::Graphs;
+    }
+    // Simulate a cached frame prepared before a terminal resize, then wheel
+    // events over the shorter bottom tile. Neither may move metric headings.
+    app.rerender_all((158, 32));
+    for height in [36, 40, 42, 44, 50] {
+        app.panels[1].scroll_offset = 15;
+        let screen = draw(&mut app, 160, height);
+        let (areas, _) = multitop::ui::regions(screen.area, 2);
+        for area in areas {
+            let output: String = (area.y..area.bottom())
+                .flat_map(|y| (area.x..area.right()).map(move |x| (x, y)))
+                .map(|point| screen[point].symbol())
+                .collect();
+            assert!(
+                output.contains("CPU") && output.contains("MEM"),
+                "height {height}: {output}"
+            );
+        }
+        assert_eq!(app.panels[1].scroll_offset, 0);
+        app.scroll_panel_up(1, 3);
+        app.scroll_panel_down(1, 3);
+        app.selected_panel = 1;
+        app.scroll_to_top();
+        assert_eq!(app.panels[1].scroll_offset, 0);
+    }
+}
+
+#[test]
+fn short_stats_tiles_only_scroll_processes_while_metrics_stay_fixed() {
+    let _guard = multitop::password_store::lock_for_test();
+    multitop::password_store::enable_mock_store();
+    let mut app = fixture();
+    for height in [12, 16, 20, 22] {
+        app.panels[0].scroll_offset = 0;
+        let before = draw(&mut app, 100, height);
+        app.scroll_panel_down(0, 5);
+        let after = draw(&mut app, 100, height);
+        let top_rows = |screen: &Buffer| -> String {
+            (1..5)
+                .flat_map(|y| (0..100).map(move |x| (x, y)))
+                .map(|point| screen[point].symbol())
+                .collect()
+        };
+        assert_eq!(top_rows(&before), top_rows(&after));
+        assert!(text(&after).contains("CPU"));
+        assert!(text(&after).contains("MEM"));
+        assert!(app.panels[0].scroll_offset > 0);
+        app.scroll_to_top();
+        assert_eq!(app.panels[0].scroll_offset, 0);
+    }
+}
+
+#[test]
+fn graph_headings_survive_fleet_growth_notices_and_uneven_resizes() {
+    let _guard = multitop::password_store::lock_for_test();
+    multitop::password_store::enable_mock_store();
+    let mut app = fixture();
+    let prototype = app.panels[0].clone();
+    for count in [2, 3, 4, 6] {
+        app.panels = vec![prototype.clone(); count];
+        for panel in &mut app.panels {
+            panel.mode = Mode::Graphs;
+            panel
+                .notes
+                .push("Discovery delayed; keeping previous fleet".into());
+            panel.scroll_offset = usize::MAX;
+        }
+        app.rerender_all((158, 48));
+        for height in [18, 36, 40, 42, 60] {
+            let screen = draw(&mut app, 160, height);
+            let (areas, _) = multitop::ui::regions(screen.area, count);
+            for area in areas {
+                let output: String = (area.y..area.bottom())
+                    .flat_map(|y| (area.x..area.right()).map(move |x| (x, y)))
+                    .map(|point| screen[point].symbol())
+                    .collect();
+                assert!(
+                    output.contains("CPU") && output.contains("MEM"),
+                    "{count} tiles at height {height}"
+                );
+            }
+            assert!(app.panels.iter().all(|panel| panel.scroll_offset == 0));
+        }
+    }
+}

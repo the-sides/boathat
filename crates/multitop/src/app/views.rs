@@ -431,44 +431,6 @@ impl App {
             .collect()
     }
 
-    pub fn scroll_up(&mut self, delta: usize) {
-        if let Some(p) = self.panels.get_mut(self.selected_panel) {
-            p.scroll_offset = p.scroll_offset.saturating_add(delta);
-        }
-    }
-
-    pub fn scroll_down(&mut self, delta: usize) {
-        if self.selected_panel < self.panels.len() {
-            let p = &mut self.panels[self.selected_panel];
-            p.scroll_offset = p.scroll_offset.saturating_sub(delta);
-        }
-    }
-
-    pub fn scroll_panel_up(&mut self, panel: usize, delta: usize) {
-        if let Some(p) = self.panels.get_mut(panel) {
-            p.scroll_offset = p.scroll_offset.saturating_add(delta);
-        }
-    }
-
-    pub fn scroll_panel_down(&mut self, panel: usize, delta: usize) {
-        if panel < self.panels.len() {
-            let p = &mut self.panels[panel];
-            p.scroll_offset = p.scroll_offset.saturating_sub(delta);
-        }
-    }
-
-    pub fn scroll_to_top(&mut self) {
-        if let Some(p) = self.panels.get_mut(self.selected_panel) {
-            p.scroll_offset = Self::SCROLL_TOP;
-        }
-    }
-
-    pub fn scroll_to_bottom(&mut self) {
-        if let Some(p) = self.panels.get_mut(self.selected_panel) {
-            p.scroll_offset = 0;
-        }
-    }
-
     /// Leave whatever view the panes are in: park the Upgrade log's offset
     /// where re-entry can find it, and start the next view at its own top.
     ///

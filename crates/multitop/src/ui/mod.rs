@@ -1,5 +1,6 @@
 mod draw;
 mod fleet;
+mod fleet_compact;
 mod fleet_stats;
 mod keybar;
 mod keybar_confirm;

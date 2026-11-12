@@ -4,6 +4,7 @@ mod apply;
 mod apply_vault;
 mod ops_view;
 mod render;
+mod scroll;
 mod types;
 mod upgrade;
 mod vault;

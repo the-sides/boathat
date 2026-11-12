@@ -27,8 +27,13 @@ const CPU_PERCENT_WIDTH: u16 = 6;
 const WIDE_TABLE: u16 = 110;
 const PID_WIDTH: u16 = 7;
 const MEM_WIDTH: u16 = 10;
+const MIN_FULL_HEIGHT: u16 = 20;
+const MIN_FULL_WIDTH: u16 = 62;
 
 pub fn draw(f: &mut Frame, panel: &Panel, snap: &Snapshot, area: Rect, pal: &PaletteView) -> usize {
+    if area.height < MIN_FULL_HEIGHT || area.width < MIN_FULL_WIDTH {
+        return super::fleet_compact::draw(f, panel, snap, area, pal);
+    }
     let cpu_height = (area.height / 3).clamp(CPU_MIN_HEIGHT, CPU_MAX_HEIGHT);
     let (cpu, rest) = split_y(area, cpu_height);
     draw_cpu(f, panel, snap, cpu, pal);
@@ -171,7 +176,7 @@ fn draw_usage(f: &mut Frame, name: &str, usage: Usage, area: Rect, pal: &Palette
     );
 }
 
-fn draw_processes(
+pub(super) fn draw_processes(
     f: &mut Frame,
     panel: &Panel,
     snap: &Snapshot,
@@ -179,6 +184,9 @@ fn draw_processes(
     pal: &PaletteView,
 ) -> usize {
     let rows = usize::from(area.height.saturating_sub(3));
+    if rows == 0 {
+        return 0;
+    }
     let columns = if area.width >= WIDE_TABLE { 2 } else { 1 };
     let offset = panel
         .scroll_offset

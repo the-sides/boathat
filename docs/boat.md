@@ -47,8 +47,11 @@ visible when no boats are running. The fleet CPU footer counts boats only.
 
 Tiles use rounded btop-inspired frames, an aggregate CPU meter and per-core
 meters, a CPU history graph, memory history, disk/swap meters and a process
-table. NET is a compact right-aligned readout. Small panes fall back to the
-compact renderer. Titles show **SWAP used/total**. On Linux, total is configured swap
+table. NET is a compact right-aligned readout. Short panes use fixed compact
+metric rows and give the remaining space to processes. Metric views never
+scroll: CPU and memory graphs resize to each tile, including after a resize or
+fleet change. Only process lists scroll; wheel/down moves further down the list,
+and Home/End select its beginning/end. Titles show **SWAP used/total**. On Linux, total is configured swap
 capacity. On macOS, it is the currently allocated swap space, which can grow;
 it is not a hard maximum. Unavailable readings are marked explicitly.
 
