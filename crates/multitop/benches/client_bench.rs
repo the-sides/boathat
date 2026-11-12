@@ -19,6 +19,7 @@ use std::time::Instant;
 
 fn sample_snapshot(server_id: u32) -> Snapshot {
     Snapshot {
+        swap: None,
         host: format!("server-{server_id}.prod.internal (10.0.0.{server_id})"),
         cpu_pct: 35.4 + (f64::from(server_id) * 2.5) % 50.0,
         cpu_mhz: Some(3600.0),

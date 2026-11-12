@@ -64,6 +64,7 @@ pub struct Snapshot {
     pub cores: Vec<(usize, f64, Option<f64>)>,
     pub temp_unit: TempUnit,
     pub mem: Usage,
+    pub swap: Option<Usage>,
     pub disk: Usage,
     pub rx_rate: f64,
     pub tx_rate: f64,
@@ -334,7 +335,7 @@ fn push_proc_table(out: &mut Vec<String>, procs: &[Proc], cols: usize, pal: &Pal
 fn net_cpu_row(snap: &Snapshot, cols: usize, pal: &PaletteView) -> String {
     const MIN_CPU_BAR: usize = 4;
     let net = format!(
-        " {}{}NET{} {}\u{2191} {}{}  {}\u{2193} {}{}",
+        "{}{}NET{} {}\u{2191}{}{} {}\u{2193}{}{}",
         pal.secondary(),
         pal.bold,
         pal.reset,
@@ -343,24 +344,27 @@ fn net_cpu_row(snap: &Snapshot, cols: usize, pal: &PaletteView) -> String {
         pal.reset,
         pal.meter_low(),
         fmt_rate(snap.rx_rate),
-        pal.reset,
+        pal.reset
     );
     let percent = format!("{:3.0}%", snap.cpu_pct);
-    let fixed = strip_ansi(&net).chars().count() + "  CPU [] ".len() + percent.len();
-    let width = cols.saturating_sub(fixed);
-    // A shorter bar is no longer readable. Compact tiers already retain the
-    // aggregate CPU row above; only a full tile uses this shared NET row.
+    let net_width = strip_ansi(&net).chars().count();
+    // The same used/total column as MEM and DSK. Compact rate labels keep
+    // ordinary traffic readings within that column without shrinking the bar.
+    let field_width = SIZE_FIELD_W.max(net_width);
+    let fixed = " CPU []  ".len() + percent.len() + field_width;
+    let width = bar_len_for(cols).min(cols.saturating_sub(fixed));
     if width < MIN_CPU_BAR {
-        return net;
+        return format!(" {net}");
     }
     let color = pal.cpu_bar(snap.cpu_pct);
     format!(
-        "{net}  {}{}CPU{} {} {color}{percent}{}",
+        " {}{}CPU{} {} {color}{percent}{} {net}{space}",
         pal.primary(),
         pal.bold,
         pal.reset,
         make_bar(snap.cpu_pct, width, color, pal.reset),
-        pal.reset
+        pal.reset,
+        space = " ".repeat(field_width - net_width)
     )
 }
 

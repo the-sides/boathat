@@ -21,6 +21,7 @@ use multitop_agent::render::{Snapshot, TempUnit};
 /// thing: how many processes it carries.
 fn snapshot_with(procs: Vec<Proc>) -> Snapshot {
     Snapshot {
+        swap: None,
         cpu_mhz: Some(3600.0),
         proc_names: Vec::new(),
         host: "host".into(),

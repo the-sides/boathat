@@ -47,6 +47,7 @@ pub mod render;
 pub mod render_layout;
 pub mod stdin_watch;
 pub mod surface;
+pub mod swap;
 pub mod sys;
 pub mod sys_temps;
 pub mod tty_reply;

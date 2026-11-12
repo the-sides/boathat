@@ -41,9 +41,18 @@ top processes over persistent SSH sessions. Discovery polling is separate from
 metric sampling. Multitop copies its collector executable to each running boat
 on first connection; it does not install a background service.
 
-Each boat's banner shows overall CPU usage in addition to multitop's per-core
-bars. The NET row also shows a total CPU bar, including when network traffic is
-idle. The footer shows overall fleet CPU, weighted by the reporting machines'
+A permanent **This Mac** tile shows this machine's CPU, memory, disk, network,
+processes and swap, using the native collector directly without SSH. It stays
+visible when no boats are running. The fleet CPU footer counts boats only.
+
+The CPU bar aligns with the memory and disk bars; NET occupies their right-hand
+value column. Titles show **SWAP used/total**. On Linux, total is configured swap
+capacity. On macOS, it is the currently allocated swap space, which can grow;
+it is not a hard maximum. Unavailable readings are marked explicitly.
+
+Graph view contains CPU and memory only, with no network graphs.
+
+The footer shows overall fleet CPU, weighted by the reporting machines'
 core counts. For example, two cores at 100% and six idle cores report 25%.
 Samples older than 15 seconds are excluded. The reporting count makes missing
 coverage explicit; unavailable boats are not counted as zero CPU.

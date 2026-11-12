@@ -176,6 +176,32 @@ pub fn get_memory_macos() -> Usage {
     Usage::default()
 }
 
+/// macOS allocates swap dynamically; `xsu_total` is its current allocation,
+/// not a promised upper bound on future growth.
+#[cfg(target_os = "macos")]
+#[must_use]
+pub fn get_swap_macos() -> Option<Usage> {
+    let mut swap: libc::xsw_usage = unsafe { std::mem::zeroed() };
+    let mut size = std::mem::size_of::<libc::xsw_usage>();
+    let result = unsafe {
+        libc::sysctlbyname(
+            c"vm.swapusage".as_ptr(),
+            (&raw mut swap).cast(),
+            &raw mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    (result == 0 && size == std::mem::size_of::<libc::xsw_usage>())
+        .then(|| Usage::new(swap.xsu_total, swap.xsu_used))
+}
+
+#[cfg(not(target_os = "macos"))]
+#[must_use]
+pub fn get_swap_macos() -> Option<Usage> {
+    None
+}
+
 #[cfg(target_os = "macos")]
 #[must_use]
 pub fn get_net_macos() -> NetTotals {

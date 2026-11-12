@@ -304,7 +304,9 @@ impl Panel {
     #[must_use]
     pub fn new(server: Server) -> Self {
         let pal = crate::palette_store::current();
-        let history = if crate::boat::identity(&server.host).is_some() {
+        let history = if crate::boat::identity(&server.host).is_some()
+            || crate::ssh::is_local(&server)
+        {
             crate::history::History::default()
         } else {
             crate::history_store::load(&server.host)

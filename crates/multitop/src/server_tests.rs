@@ -117,6 +117,7 @@ async fn mtop_raw_uses_decoder() {
         w.snapshots.insert(
             "test-host".into(),
             Snapshot {
+                swap: None,
                 host: "test-host".into(),
                 agent_version: "0.44.2".into(),
                 cpu_pct: 42.0,

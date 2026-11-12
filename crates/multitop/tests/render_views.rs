@@ -76,6 +76,7 @@ fn server(host: &str, cmd: Option<&str>) -> Server {
 /// A plausible, fixed snapshot. Real renderer, invented numbers.
 fn snapshot(host: &str, cpu: f64) -> multitop_agent::render::Snapshot {
     multitop_agent::render::Snapshot {
+        swap: None,
         host: host.to_string(),
         agent_version: "0.24.0".to_string(),
         cpu_pct: cpu,

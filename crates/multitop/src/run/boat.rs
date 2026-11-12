@@ -224,7 +224,7 @@ mod tests {
         let click = MouseEvent {
             kind: MouseEventKind::Down(MouseButton::Left),
             column: 2,
-            row: 2,
+            row: 22,
             modifiers: KeyModifiers::NONE,
         };
         assert!(!dismiss(&mut app, click, Some((160, 40))));
@@ -232,12 +232,10 @@ mod tests {
             &mut app,
             Ok(fleet(&[("bx_a", "stopped"), ("bx_b", "stopped")]))
         ));
-        assert_eq!(app.panels.len(), 1);
+        assert_eq!(app.panels.len(), 2);
         assert!(dismiss(&mut app, click, Some((160, 40))));
-        assert_eq!(
-            crate::boat::identity(&app.panels[0].server.host),
-            Some("waiting")
-        );
+        assert_eq!(app.panels.len(), 1);
+        assert!(crate::ssh::is_local(&app.panels[0].server));
         assert_eq!(app.boat.as_ref().unwrap().visible.len(), 0);
     }
 }

@@ -7,7 +7,7 @@
 
 use super::{
     EXEC_MIN_VERSION, HEADER_LEN, MAGIC, MODE_DOCKER, MODE_EXEC, MODE_FETCH, MODE_HELLO,
-    MODE_MONITOR,
+    MODE_MONITOR, SWAP_MIN_VERSION,
 };
 use crate::docker::Row as DockerRow;
 use crate::fetch::FetchSnapshot;
@@ -150,6 +150,16 @@ fn decode_snapshot(cur: &mut Cursor, version: u8) -> Option<Snapshot> {
         Vec::new()
     };
 
+    let swap = if version >= SWAP_MIN_VERSION {
+        match cur.read_u8()? {
+            0 => None,
+            1 => Some(Usage::new(cur.read_u64()?, cur.read_u64()?)),
+            _ => return None,
+        }
+    } else {
+        None
+    };
+
     Some(Snapshot {
         host,
         agent_version,
@@ -159,6 +169,7 @@ fn decode_snapshot(cur: &mut Cursor, version: u8) -> Option<Snapshot> {
         cores,
         temp_unit,
         mem: Usage::new(mem_total, mem_used),
+        swap,
         disk: Usage::new(disk_total, disk_used),
         rx_rate,
         tx_rate,

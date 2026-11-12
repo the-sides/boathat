@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
-use crate::boat::{identity, offline, waiting, POLL_INTERVAL};
+use crate::boat::{identity, offline, POLL_INTERVAL};
 use crate::config::Server;
 
 #[derive(Default)]
@@ -19,7 +19,8 @@ impl State {
         self.inventory = inventory;
         self.visible
             .retain(|id| self.inventory.iter().any(|s| identity(&s.host) == Some(id)));
-        self.samples.retain(|id, _| self.visible.contains(id));
+        self.samples
+            .retain(|id, _| id == "localhost" || self.visible.contains(id));
         for server in &self.inventory {
             if !offline(&server.host) {
                 if let Some(id) = identity(&server.host) {
@@ -33,9 +34,7 @@ impl State {
             .filter(|s| identity(&s.host).is_some_and(|id| self.visible.contains(id)))
             .cloned()
             .collect();
-        if shown.is_empty() {
-            shown.push(waiting("No running boats. Waiting for discovery…"));
-        }
+        shown.insert(0, crate::boat::local_server());
         shown
     }
 }

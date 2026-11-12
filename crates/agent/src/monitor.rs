@@ -86,6 +86,7 @@ impl Monitor {
         snap.cpu_mhz = crate::cpufreq::get_cpu_mhz();
         snap.temp_unit = crate::render::TempUnit::default();
         snap.mem = proc::get_memory();
+        snap.swap = crate::swap::sample();
         snap.disk = proc::get_disk();
         snap.rx_rate = rate(net.rx, self.prev_net.rx);
         snap.tx_rate = rate(net.tx, self.prev_net.tx);

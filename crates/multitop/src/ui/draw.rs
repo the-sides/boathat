@@ -185,8 +185,8 @@ fn banner_row(
         })
         .unwrap_or_else(|| panel.server.host.clone());
     let host_name = panel.server.name.as_ref().unwrap_or(&host_name);
-    let boat_cpu = app.boat.as_ref().and_then(|state| {
-        let id = crate::boat::identity(&panel.server.host)?;
+    let swap_title = app.boat.as_ref().and_then(|state| {
+        let id = crate::boat::identity(&panel.server.host).unwrap_or(&panel.server.host);
         if crate::boat::offline(&panel.server.host)
             || state
                 .samples
@@ -196,13 +196,22 @@ fn banner_row(
             return None;
         }
         match &panel.last_monitor {
-            Some(multitop_agent::proto::Payload::Monitor(snap)) => {
-                Some(format!("{host_name} | CPU {:.1}%", snap.cpu_pct))
+            Some(multitop_agent::proto::Payload::Monitor(reading)) => {
+                Some(reading.swap.map_or_else(
+                    || format!("{host_name} | SWAP unavailable"),
+                    |usage| {
+                        format!(
+                            "{host_name} | SWAP {}/{}",
+                            multitop_agent::fmt::fmt_size(usage.used),
+                            multitop_agent::fmt::fmt_size(usage.total)
+                        )
+                    },
+                ))
             }
             _ => None,
         }
     });
-    let host_name = boat_cpu.as_deref().unwrap_or(host_name);
+    let host_name = swap_title.as_deref().unwrap_or(host_name);
 
     // Row 0 is composed here, once, from everything that belongs on it:
     // the banner and the scroll badge. `visible` used to write the badge

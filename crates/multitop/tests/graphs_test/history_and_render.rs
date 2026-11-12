@@ -154,7 +154,7 @@ fn a_panel_with_no_samples_says_so_instead_of_drawing_a_flat_line() {
 }
 
 #[test]
-fn the_four_graphs_carry_headings_and_the_current_readings() {
+fn cpu_and_memory_graphs_carry_headings_and_the_current_readings() {
     let mut h = History::default();
     h.record(&snapshot(75.0, 50, 1024.0, 4096.0));
     let text = render_graphs(&h, 40, 20, &plain()).join("\n");
@@ -169,18 +169,9 @@ fn the_four_graphs_carry_headings_and_the_current_readings() {
         text.contains("50%"),
         "the current MEM reading is missing:\n{text}"
     );
-    // Each direction of the link on its own. One combined line could not say
-    // which way the traffic was going.
     assert!(
-        text.contains("NET \u{2193} down"),
-        "no download graph:\n{text}"
-    );
-    assert!(text.contains("NET \u{2191} up"), "no upload graph:\n{text}");
-    // An autoscaled graph with no number on it is a shape that could mean a
-    // kilobyte or a gigabit, so the scale is named.
-    assert!(
-        text.contains("peak"),
-        "the net graphs did not say their scale:\n{text}"
+        !text.contains("NET") && !text.contains("down") && !text.contains("up"),
+        "{text}"
     );
 }
 
@@ -245,34 +236,6 @@ fn a_machine_that_publishes_no_clock_says_so_rather_than_showing_zero() {
     assert!(
         !text.contains("0 MHz"),
         "an absent clock was drawn as zero:\n{text}"
-    );
-}
-
-#[test]
-fn both_directions_of_the_link_share_one_scale() {
-    // A link where download dwarfs upload must read as exactly that. Scaling
-    // each graph to its own peak would draw them the same height.
-    let mut h = History::default();
-    h.record(&snapshot(10.0, 10, 1_000_000.0, 1_000.0));
-    let out = render_graphs(&h, 20, 20, &plain());
-
-    let dots = |from: usize| -> usize {
-        out[from + 1..]
-            .iter()
-            .take_while(|l| !l.contains("NET") && !l.contains("MEM"))
-            .map(|l| {
-                l.chars()
-                    .filter(|c| ('\u{2801}'..='\u{28ff}').contains(c))
-                    .count()
-            })
-            .sum()
-    };
-    let down_at = out.iter().position(|l| l.contains("down")).expect("down");
-    let up_at = out.iter().position(|l| l.contains("up")).expect("up");
-    assert!(
-        dots(down_at) > dots(up_at),
-        "upload was drawn as busy as download:\n{}",
-        out.join("\n")
     );
 }
 

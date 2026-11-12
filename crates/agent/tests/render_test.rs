@@ -171,6 +171,27 @@ fn net_and_total_cpu_remain_visible_when_network_is_idle() {
 }
 
 #[test]
+fn cpu_bar_and_network_values_align_with_memory_and_disk_columns() {
+    for cols in [60, 80, 120, 190] {
+        let s = Snapshot {
+            cpu_pct: 50.0,
+            mem: usage(8 << 30, 4 << 30, 50.0),
+            disk: usage(64 << 30, 32 << 30, 50.0),
+            rx_rate: 6_000.0,
+            tx_rate: 25_000.0,
+            ..snap()
+        };
+        let lines = render(&s, cols, 0, bar_len_for(cols), &pal());
+        let mem = strip_ansi(&labeled(&lines, "MEM")[0]);
+        let cpu_net = strip_ansi(&find(&lines, "NET")[0]);
+        assert_eq!(cpu_net.find('['), mem.find('['));
+        assert_eq!(cpu_net.find(']'), mem.find(']'));
+        assert!(cpu_net.find("NET").unwrap() > cpu_net.find(']').unwrap());
+        assert!(cpu_net.chars().count() <= cols);
+    }
+}
+
+#[test]
 fn the_shared_net_cpu_row_fits_the_tile_at_every_usage_level() {
     for cols in [40, 60, 80, 120, 190] {
         for percent in [0, 25, 100] {

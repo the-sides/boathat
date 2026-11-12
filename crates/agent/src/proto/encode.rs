@@ -14,6 +14,8 @@ use crate::fetch::FetchSnapshot;
 use crate::proto::Payload;
 use crate::render::{Snapshot, TempUnit};
 
+const SWAP_TRAILER_MAX: usize = 1 + 2 * std::mem::size_of::<u64>();
+
 #[must_use]
 pub fn encode_packet(payload: &Payload) -> Vec<u8> {
     let mode = match payload {
@@ -140,6 +142,11 @@ fn encode_snapshot(snap: &Snapshot, buf: &mut Vec<u8>) {
     }
 
     encode_proc_names(&snap.proc_names, buf);
+    buf.push(u8::from(snap.swap.is_some()));
+    if let Some(swap) = snap.swap {
+        buf.extend_from_slice(&swap.total.to_le_bytes());
+        buf.extend_from_slice(&swap.used.to_le_bytes());
+    }
 }
 
 fn encode_docker(host: &str, rows: &[DockerRow], buf: &mut Vec<u8>) {
@@ -190,11 +197,10 @@ fn encode_proc_names(names: &[crate::proc_name::ProcName], buf: &mut Vec<u8>) {
         }
         let before = buf.len();
         encode_str(name, buf);
-        if buf.len() - HEADER_LEN > MAX_PAYLOAD {
+        if buf.len() - HEADER_LEN > MAX_PAYLOAD - SWAP_TRAILER_MAX {
             // Drop it whole rather than half, the same rule the Docker rows
             // follow. A truncated string here would desynchronise every field
-            // after it -- there are none today, and there must be none for
-            // this to stay true.
+            // after it. Reserve room for the optional swap trailer too.
             buf.truncate(before);
             break;
         }

@@ -107,6 +107,7 @@ mod tests {
 
     fn snap(cpu: f64, mem_pct: u64, disk_pct: u64) -> Snapshot {
         Snapshot {
+            swap: None,
             host: "test".into(),
             agent_version: "0.44.2".into(),
             cpu_pct: cpu,

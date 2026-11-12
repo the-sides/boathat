@@ -1,4 +1,4 @@
-//! The `G` view: CPU, memory and network drawn as braille area graphs.
+//! The `G` view: CPU and memory drawn as braille area graphs.
 //!
 //! Braille gives four times the vertical resolution and twice the horizontal
 //! resolution of block characters, in one cell, in a font every terminal
@@ -193,20 +193,16 @@ pub fn render_graphs_with_zoom(
     let window = cols * DOT_COLS * zoom.max(1) as usize;
     let cpu = history.cpu.tail(window);
     let mem = history.mem.tail(window);
-    let rx = history.rx.tail(window);
-    let tx = history.tx.tail(window);
 
-    // Four plots: CPU, memory, and each direction of the link on its own. One
-    // combined line could not say which way the traffic was going, which is the
-    // first thing anyone wants to know about a busy host.
-    let each = body / 4;
+    // Share the available height between CPU and memory.
+    let each = body / 2;
     let cpu_reading = format!(
         "{} {}",
         pct(history.cpu.latest()),
         clock(history.mhz.latest())
     );
     if each < 2 {
-        // No room for four. One graph drawn properly beats four headings with
+        // No room for two. One graph drawn properly beats two headings with
         // nothing under them.
         return with_head(
             out,
@@ -214,11 +210,7 @@ pub fn render_graphs_with_zoom(
         );
     }
     // The remainder goes to CPU, which is the one people look at.
-    let cpu_rows = body - each * 3;
-
-    // One scale for both directions, so a link where transmit dwarfs receive
-    // reads as exactly that rather than as two equally busy graphs.
-    let net_peak = rx.iter().chain(tx.iter()).copied().fold(0.0f64, f64::max);
+    let cpu_rows = body - each;
 
     let mut lines = plot(
         &cpu_plot(history, &cpu, &cpu_reading, pal),
@@ -234,36 +226,6 @@ pub fn render_graphs_with_zoom(
             samples: &mem,
             max: 100.0,
             colour: pal.cpu_bar(history.mem.latest().unwrap_or(0.0)),
-        },
-        cols,
-        each,
-        pal,
-    ));
-    // The heading names the scale, because an autoscaled graph with no number
-    // on it is a shape that could mean a kilobyte or a gigabit. Both directions
-    // name the same scale, which is what makes them comparable by eye.
-    let scale = format!("peak {}/s", rate(net_peak));
-    let down_reading = format!("{}/s", rate(history.rx.latest().unwrap_or(0.0)));
-    lines.extend(plot(
-        &Plot {
-            heading: &format!("NET \u{2193} down, {scale}"),
-            reading: &down_reading,
-            samples: &rx,
-            max: net_peak,
-            colour: pal.primary(),
-        },
-        cols,
-        each,
-        pal,
-    ));
-    let up_reading = format!("{}/s", rate(history.tx.latest().unwrap_or(0.0)));
-    lines.extend(plot(
-        &Plot {
-            heading: &format!("NET \u{2191} up, {scale}"),
-            reading: &up_reading,
-            samples: &tx,
-            max: net_peak,
-            colour: pal.secondary(),
         },
         cols,
         each,
@@ -400,8 +362,4 @@ fn clock(mhz: Option<f64>) -> String {
     } else {
         format!("{mhz:.0} MHz")
     }
-}
-
-fn rate(bytes_per_sec: f64) -> String {
-    multitop_agent::fmt::fmt_rate(bytes_per_sec)
 }

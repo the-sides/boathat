@@ -167,6 +167,7 @@ mod views {
 
     pub fn stats() -> (Mode, Payload) {
         let snapshot = Snapshot {
+            swap: None,
             host: "srv-alpha (10.0.0.1)".into(),
             agent_version: "0.0.0".into(),
             cpu_pct: 42.0,

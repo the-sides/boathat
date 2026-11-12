@@ -164,3 +164,14 @@ pub async fn discover() -> Result<Vec<Server>, String> {
     }
     parse_inventory(&output.stdout)
 }
+
+/// This machine is sampled directly by the embedded native collector, not SSH.
+#[must_use]
+pub fn local_server() -> Server {
+    Server {
+        host: "localhost".into(),
+        name: Some("This Mac [local]".into()),
+        port: 0,
+        ..Server::default()
+    }
+}

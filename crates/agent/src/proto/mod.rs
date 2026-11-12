@@ -18,7 +18,11 @@ pub const MAGIC: &[u8; 4] = b"MTOP";
 ///
 /// 5 added the Exec mode, which moved the upgrade off raw text over `ssh -tt`
 /// and onto this framing. It is the only mode that travels in both directions.
-pub const PROTO_VERSION: u8 = 5;
+/// 6 appends optional swap capacity and usage to Monitor snapshots.
+pub const PROTO_VERSION: u8 = 6;
+
+/// First protocol carrying optional swap allocation and usage.
+pub const SWAP_MIN_VERSION: u8 = 6;
 
 /// The version that introduced [`ProtoMode::Exec`].
 ///

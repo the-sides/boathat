@@ -23,6 +23,7 @@ use multitop_agent::render::{Snapshot, TempUnit};
 
 fn snapshot() -> Snapshot {
     Snapshot {
+        swap: None,
         cpu_mhz: Some(3600.0),
         proc_names: Vec::new(),
         host: "web-01 (10.0.0.4)".into(),

@@ -1,5 +1,47 @@
 use multitop::boat::{identity, offline, parse_inventory, transport};
 
+#[test]
+fn local_machine_stays_visible_when_no_boats_are_running() {
+    let mut state = multitop::boat_fleet::State::default();
+    let shown = state.select(Vec::new());
+    assert_eq!(shown.len(), 1);
+    assert!(multitop::ssh::is_local(&shown[0]));
+    assert_eq!(state.select(Vec::new())[0], shown[0]);
+}
+
+#[test]
+fn title_shows_swap_used_and_allocated_instead_of_cpu_percentage() {
+    let _guard = multitop::password_store::lock_for_test();
+    multitop::password_store::enable_mock_store();
+    multitop::password_store::clear_mock_store();
+    let mut app = multitop::app::App::new(vec![multitop::boat::local_server()]);
+    app.boat = Some(multitop::boat_fleet::State::default());
+    app.apply(multitop::app::Msg::Packet {
+        panel: 0,
+        gen: 0,
+        epoch: 0,
+        dims: (158, 40),
+        payload: multitop_agent::proto::Payload::Monitor(multitop_agent::render::Snapshot {
+            host: "local".into(),
+            swap: Some(multitop_agent::proc::Usage::new(8 << 30, 1 << 30)),
+            ..multitop_agent::render::Snapshot::default()
+        }),
+    });
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(160, 40)).unwrap();
+    terminal
+        .draw(|frame| multitop::ui::draw(frame, &mut app))
+        .unwrap();
+    let text: String = terminal
+        .backend()
+        .buffer()
+        .content
+        .iter()
+        .map(ratatui::buffer::Cell::symbol)
+        .collect();
+    assert!(text.contains("SWAP 1.0GiB/8.0GiB"), "{text}");
+    assert!(!text.contains("| CPU"), "{text}");
+}
+
 #[tokio::test]
 async fn selecting_a_boat_never_writes_dashboard_state() {
     let _guard = multitop::password_store::lock_for_test_async().await;
@@ -96,20 +138,21 @@ fn stopped_before_launch_stays_hidden_but_newly_stopped_waits_for_acknowledgment
     )
     .unwrap();
     let visible = state.select(initial);
-    assert_eq!(visible.len(), 1);
-    assert_eq!(identity(&visible[0].host), Some("bx_a"));
+    assert_eq!(visible.len(), 2);
+    assert_eq!(identity(&visible[1].host), Some("bx_a"));
     let stopped = parse_inventory(
         br#"{"sandboxes":[{"id":"bx_a","state":"stopped"},{"id":"bx_b","state":"stopped"}]}"#,
     )
     .unwrap();
     let visible = state.select(stopped.clone());
-    assert_eq!(identity(&visible[0].host), Some("bx_a"));
-    assert!(offline(&visible[0].host));
+    assert_eq!(identity(&visible[1].host), Some("bx_a"));
+    assert!(offline(&visible[1].host));
     state.visible.remove("bx_a");
     let visible = state.select(stopped);
-    assert_eq!(identity(&visible[0].host), Some("waiting"));
+    assert_eq!(visible.len(), 1);
+    assert!(multitop::ssh::is_local(&visible[0]));
     let resumed = parse_inventory(br#"{"sandboxes":[{"id":"bx_a","state":"idle"}]}"#).unwrap();
-    assert_eq!(identity(&state.select(resumed)[0].host), Some("bx_a"));
+    assert_eq!(identity(&state.select(resumed)[1].host), Some("bx_a"));
 }
 
 #[test]

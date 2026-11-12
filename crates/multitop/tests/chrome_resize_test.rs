@@ -41,6 +41,7 @@ fn pal() -> multitop_agent::palette_view::PaletteView {
 
 fn sample_snapshot() -> Snapshot {
     Snapshot {
+        swap: None,
         host: "test-host.example.com (10.0.0.1)".into(),
         agent_version: "0.0.0".into(),
         cpu_pct: 42.0,

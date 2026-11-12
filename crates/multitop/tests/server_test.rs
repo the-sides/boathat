@@ -20,6 +20,7 @@ use multitop_agent::render::{Snapshot, TempUnit};
 
 fn mock_snapshot(host: &str) -> Snapshot {
     Snapshot {
+        swap: None,
         host: host.to_string(),
         agent_version: "0.45.0".to_string(),
         cpu_pct: 15.0,

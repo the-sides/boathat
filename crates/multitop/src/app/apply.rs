@@ -91,9 +91,8 @@ impl App {
         }
         if matches!(payload, multitop_agent::proto::Payload::Monitor(_)) {
             if let (Some(state), Some(panel)) = (&mut self.boat, self.panels.get(panel)) {
-                if let Some(id) = crate::boat::identity(&panel.server.host) {
-                    state.samples.insert(id.into(), std::time::Instant::now());
-                }
+                let id = crate::boat::identity(&panel.server.host).unwrap_or(&panel.server.host);
+                state.samples.insert(id.into(), std::time::Instant::now());
             }
         }
         // The palette is cloned to an Rc BEFORE the mutable borrow of the panel,

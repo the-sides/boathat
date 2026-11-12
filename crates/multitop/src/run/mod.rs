@@ -36,7 +36,7 @@ impl Fleet {
     fn initial(&self) -> Vec<crate::config::Server> {
         match self {
             Self::Configured(servers) => servers.clone(),
-            Self::Boat => vec![crate::boat::waiting("Discovering Boat sandboxes…")],
+            Self::Boat => vec![crate::boat::local_server()],
         }
     }
 }
