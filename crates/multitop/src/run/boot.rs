@@ -10,6 +10,9 @@ use crate::config::Server;
 pub(super) fn boot_boat_app(servers: &[Server]) -> App {
     let mut app = App::new(servers.to_vec());
     app.boat = Some(crate::boat_fleet::State::default());
+    for panel in &mut app.panels {
+        panel.mode = crate::panel::Mode::Graphs;
+    }
     app.background = crate::background::detect();
     app.rebuild_palette_view();
     app
@@ -189,8 +192,9 @@ mod tests {
 
     #[test]
     fn boat_boot_has_no_persistent_config_or_vault() {
-        let app = super::boot_boat_app(&[crate::boat::waiting("Boat")]);
-        assert!(app.boat.is_some());
+        let app = super::boot_boat_app(&[crate::boat::local_server()]);
+        assert!(!app.boat.as_ref().unwrap().list_open);
+        assert_eq!(app.panels[0].mode, crate::panel::Mode::Graphs);
         assert!(app.config_path.is_none());
         assert!(app.vault.is_none());
         assert_eq!(app.saved_filters, [] as [String; 0]);

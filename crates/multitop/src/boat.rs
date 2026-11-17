@@ -70,26 +70,76 @@ struct PageInfo {
 }
 
 #[derive(Deserialize)]
-struct Sandbox {
-    id: String,
+pub struct Sandbox {
+    pub id: String,
     name: Option<String>,
-    state: String,
+    pub state: String,
     #[serde(rename = "type")]
     size: Option<String>,
+    #[serde(rename = "archiveAfter")]
+    archive_after: Option<String>,
+}
+
+impl Sandbox {
+    #[must_use]
+    pub fn name(&self) -> &str {
+        self.name.as_deref().unwrap_or("Unnamed")
+    }
+
+    #[must_use]
+    pub fn size(&self) -> &str {
+        self.size.as_deref().unwrap_or("unknown")
+    }
+
+    #[must_use]
+    pub fn is_running(&self) -> bool {
+        matches!(self.state.as_str(), "idle" | "running" | "ready")
+    }
+
+    #[must_use]
+    pub fn is_dead(&self) -> bool {
+        matches!(
+            self.state.as_str(),
+            "stopped" | "error" | "failed" | "expired" | "archived" | "dead"
+        )
+    }
+
+    #[must_use]
+    pub fn lease_deadline(&self) -> Option<i64> {
+        let timestamp = self.archive_after.as_deref()?;
+        time::OffsetDateTime::parse(timestamp, &time::format_description::well_known::Rfc3339)
+            .ok()
+            .map(time::OffsetDateTime::unix_timestamp)
+    }
+
+    #[must_use]
+    pub fn server(&self) -> Server {
+        let prefix = if self.is_running() { ACTIVE } else { OFFLINE };
+        Server {
+            host: format!("{prefix}{}", self.id),
+            name: Some(format!(
+                "{} [{}] | SIZE {}",
+                self.name(),
+                self.state,
+                self.size()
+            )),
+            port: crate::config::DEFAULT_PORT,
+            ..Server::default()
+        }
+    }
 }
 
 /// Parse the complete CLI response, refusing partial or ambiguous inventories.
 ///
 /// # Errors
 /// Returns a displayable reason, without echoing the account response.
-pub fn parse_inventory(bytes: &[u8]) -> Result<Vec<Server>, String> {
-    let inventory: Inventory = serde_json::from_slice(bytes)
+pub fn parse_inventory(bytes: &[u8]) -> Result<Vec<Sandbox>, String> {
+    let mut inventory: Inventory = serde_json::from_slice(bytes)
         .map_err(|e| format!("Boat returned an invalid inventory: {e}"))?;
     if inventory.page_info.is_some_and(|p| p.has_more) {
         return Err("Boat returned a partial inventory; keeping the previous fleet.".into());
     }
-    let mut servers = Vec::new();
-    for sandbox in inventory.sandboxes {
+    for sandbox in &mut inventory.sandboxes {
         if !sandbox.id.starts_with("bx_")
             || !sandbox
                 .id
@@ -98,67 +148,29 @@ pub fn parse_inventory(bytes: &[u8]) -> Result<Vec<Server>, String> {
         {
             return Err("Boat returned an invalid sandbox id.".into());
         }
-        let prefix = if matches!(sandbox.state.as_str(), "idle" | "running" | "ready") {
-            ACTIVE
-        } else {
-            OFFLINE
-        };
-        let name = sandbox
-            .name
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| sandbox.id.clone());
         // Names are remote text, never shell commands or terminal escapes.
-        let name: String = name.chars().filter(|c| !c.is_control()).collect();
-        let state: String = sandbox.state.chars().filter(|c| !c.is_control()).collect();
-        let size = sandbox
-            .size
-            .map(|size| size.chars().filter(|c| !c.is_control()).collect::<String>())
-            .filter(|size| !size.trim().is_empty())
-            .unwrap_or_else(|| "unknown".into());
-        servers.push(Server {
-            host: format!("{prefix}{}", sandbox.id),
-            name: Some(format!("{name} [{state}] | SIZE {size}")),
-            port: crate::config::DEFAULT_PORT,
-            user: String::new(),
-            upgrade_cmd: None,
-            custom_command: None,
-            mcp: None,
-        });
+        sandbox.name = clean_label(sandbox.name.take());
+        sandbox.size = clean_label(sandbox.size.take());
+        sandbox.state.retain(|c| !c.is_control());
     }
-    servers.sort_by(|a, b| identity(&a.host).cmp(&identity(&b.host)));
-    if servers
-        .windows(2)
-        .any(|w| identity(&w[0].host) == identity(&w[1].host))
-    {
+    inventory.sandboxes.sort_by(|a, b| a.id.cmp(&b.id));
+    if inventory.sandboxes.windows(2).any(|w| w[0].id == w[1].id) {
         return Err("Boat returned duplicate sandbox ids.".into());
     }
-    if servers.is_empty() {
-        servers.push(waiting(
-            "No boats found. Discovery refreshes every 15 seconds.",
-        ));
-    }
-    Ok(servers)
+    Ok(inventory.sandboxes)
 }
 
-/// A placeholder keeps an empty fleet navigable while discovery runs.
-#[must_use]
-pub fn waiting(message: &str) -> Server {
-    Server {
-        host: format!("{OFFLINE}waiting"),
-        name: Some(message.into()),
-        port: crate::config::DEFAULT_PORT,
-        user: String::new(),
-        upgrade_cmd: None,
-        custom_command: None,
-        mcp: None,
-    }
+fn clean_label(label: Option<String>) -> Option<String> {
+    label
+        .map(|s| s.chars().filter(|c| !c.is_control()).collect::<String>())
+        .filter(|s| !s.trim().is_empty())
 }
 
 /// Read metadata only: listing never creates, resumes or changes a sandbox.
 ///
 /// # Errors
 /// Missing CLI/login, failed requests and timeouts leave the last fleet intact.
-pub async fn discover() -> Result<Vec<Server>, String> {
+pub async fn discover() -> Result<Vec<Sandbox>, String> {
     let mut cmd = Command::new(executable());
     cmd.args(["--no-update", "list", "--all", "--json"])
         .kill_on_drop(true);

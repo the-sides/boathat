@@ -2,7 +2,7 @@
 //! views still pass through the existing notice/scrollback composer.
 
 use crate::{app::App, panel::Mode};
-use multitop_agent::{fmt::fmt_size, proto::Payload, render::Snapshot};
+use multitop_agent::fmt::fmt_size;
 use ratatui::{
     layout::Rect,
     widgets::{Paragraph, Wrap},
@@ -11,30 +11,11 @@ use ratatui::{
 
 use super::{meters, windowing::pane_lines};
 
-fn sample(app: &App, index: usize) -> Option<&Snapshot> {
-    let panel = &app.panels[index];
-    let fleet = app.boat.as_ref()?;
-    let id = crate::boat::identity(&panel.server.host).unwrap_or(&panel.server.host);
-    if crate::boat::offline(&panel.server.host)
-        || fleet
-            .samples
-            .get(id)
-            .is_none_or(|at| at.elapsed() > crate::boat::POLL_INTERVAL)
-    {
-        return None;
-    }
-    match panel.last_monitor.as_ref()? {
-        Payload::Monitor(snapshot) => Some(snapshot),
-        _ => None,
-    }
-}
-
 /// `None` leaves ordinary SSH mode on its original renderer.
 pub fn draw(f: &mut Frame, app: &App, index: usize, area: Rect) -> Option<usize> {
-    app.boat.as_ref()?;
     let panel = &app.panels[index];
     let pal = app.current_theme();
-    let snapshot = sample(app, index);
+    let snapshot = app.boat.as_ref()?.fresh_sample(panel);
     let name = panel.server.name.as_deref().unwrap_or(&panel.server.host);
     let swap = snapshot.map(|snap| {
         snap.swap.map_or_else(
@@ -64,9 +45,7 @@ pub fn draw(f: &mut Frame, app: &App, index: usize, area: Rect) -> Option<usize>
     }
     let inner = border.inner(area);
     f.render_widget(border, area);
-    if crate::boat::offline(&panel.server.host)
-        && crate::boat::identity(&panel.server.host) != Some("waiting")
-    {
+    if crate::boat::offline(&panel.server.host) {
         super::dead::draw(f, inner, &pal);
         return Some(0);
     }

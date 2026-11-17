@@ -23,14 +23,18 @@ organization scope, as for the regular CLI.
 
 - Discovery reads `boat list --all --json` every 15 seconds after the preceding
   request completes. Discovery has a 12-second timeout and never overlaps itself.
-- Boats already stopped at launch are collapsed into the footer count.
+- Boats already stopped at launch are collapsed in the graph and stats grids
+  and shown at the bottom of the fleet list.
 - New and resumed boats inherit the current fleet stats or graph view, including
   the graph zoom. Existing graph history stays intact when the fleet changes.
 - Running boats automatically appear. A visible boat that stops keeps its tile
   with a centered ASCII `DEAD` banner that scales to fit without distortion until you click it. If it resumes, its tile
   reconnects automatically.
-- Clicking a stopped tile dismisses it for this dashboard session. A later resume
-  makes it visible again. Deleted boats disappear on the next discovery.
+- Click a stopped tile to dismiss it for the session. Press `c` to dismiss all
+  stopped boxes from the list and grid. Press `C` to enable or disable automatic
+  dismissal. It starts off each session and clears current stopped boxes when
+  enabled. A later resume makes a dismissed boat visible again. Deleted boats
+  disappear on the next discovery.
 - Sandbox IDs identify boats across name and address changes. Connections use
   `boat ssh <id>` so Boat handles SSH key authorization and current destinations.
 - The dashboard never creates, resumes, stops or deletes boats automatically.
@@ -61,7 +65,7 @@ and Home/End select its beginning/end. Titles show the reported **SIZE** (`defau
 capacity. On macOS, it is the currently allocated swap space, which can grow;
 it is not a hard maximum. Unavailable readings are marked explicitly.
 
-Graph view contains CPU and memory only, with no network display. Graph dots
+Boathat opens in graph view, which shows CPU and memory. Graph dots
 change color with height, from the theme's healthy color through its primary
 color to a pale crest. Missing history stays blank. Zoom groups samples by
 peak so short CPU spikes remain visible.
@@ -71,9 +75,13 @@ core counts. For example, two cores at 100% and six idle cores report 25%.
 Samples older than 15 seconds are excluded. The reporting count makes missing
 coverage explicit; unavailable boats are not counted as zero CPU.
 
-Use `G` for graphs, `s` to return to stats, `z` or Enter to focus a tile,
-`Esc` to return to the fleet, `/` to filter by boat name or ID,
-and `q` to quit. Click a stopped tile to dismiss it.
+Use `l` to toggle the fleet list. Each boat shows its state, time left on its
+lease, size, name, CPU and memory on one row. Long names wrap. Missing or stale
+readings appear as a dash. Scroll with the mouse wheel, arrow keys, or Page Up
+and Page Down.
+
+Use `G` for graphs, `s` for stats, `z` or Enter to focus a tile, `Esc` to go
+back, `/` to filter by boat name or ID, and `q` to quit.
 
 ## Scope
 

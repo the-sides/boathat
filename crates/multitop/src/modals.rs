@@ -229,11 +229,44 @@ const HELP_ROWS: &[(&str, &str)] = &[
 ];
 
 pub fn draw_help(f: &mut Frame, theme: &PaletteView) {
+    draw_help_rows(
+        f,
+        theme,
+        HELP_ROWS,
+        &[
+            "Upgrade is two presses: u shows what would run, u again confirms.",
+            "Filter searches host/user + whatever the view shows (process, container, OS).",
+        ],
+    );
+}
+
+pub(crate) fn draw_boat_help(f: &mut Frame, theme: &PaletteView) {
+    draw_help_rows(
+        f,
+        theme,
+        &[
+            ("l", "switch between list and grid"),
+            ("G", "CPU and memory graphs"),
+            ("s", "stats grid"),
+            ("c", "dismiss stopped boxes from the dashboard"),
+            ("C", "toggle automatic dismissal"),
+            ("/", "filter boats"),
+            ("↑/↓", "scroll the list"),
+            ("Home/End", "jump to the start or end of the list"),
+            ("z", "focus a grid tile"),
+            ("Esc", "go back or clear the filter"),
+            ("q", "quit"),
+        ],
+        &[],
+    );
+}
+
+fn draw_help_rows(f: &mut Frame, theme: &PaletteView, bindings: &[(&str, &str)], notes: &[&str]) {
     let area = f.area();
     let popup_width = (72u16).min(area.width.saturating_sub(4));
     // One row per key plus border, title and the two note lines: a fixed
     // height would clip the moment a binding is added.
-    let popup_height = u16::try_from(HELP_ROWS.len() + 8)
+    let popup_height = u16::try_from(bindings.len() + notes.len() + 6)
         .unwrap_or(u16::MAX)
         .min(area.height.saturating_sub(4));
     let x = (area.width.saturating_sub(popup_width)) / 2;
@@ -248,7 +281,7 @@ pub fn draw_help(f: &mut Frame, theme: &PaletteView) {
         .padding(ratatui::widgets::Padding::horizontal(PAD))
         .border_style(ink.border);
 
-    let mut rows: Vec<Line> = HELP_ROWS
+    let mut rows: Vec<Line> = bindings
         .iter()
         .map(|(key, what)| {
             Line::from(vec![
@@ -257,17 +290,14 @@ pub fn draw_help(f: &mut Frame, theme: &PaletteView) {
             ])
         })
         .collect();
-    rows.push(Line::from(""));
-    rows.extend([
-        Line::from(vec![Span::styled(
-            "Upgrade is two presses: u shows what would run, u again confirms.",
-            ink.muted,
-        )]),
-        Line::from(vec![Span::styled(
-            "Filter searches host/user + whatever the view shows (process, container, OS).",
-            ink.muted,
-        )]),
-    ]);
+    if !notes.is_empty() {
+        rows.push(Line::from(""));
+        rows.extend(
+            notes
+                .iter()
+                .map(|note| Line::from(Span::styled(*note, ink.muted))),
+        );
+    }
 
     f.render_widget(ratatui::widgets::Clear, rect);
     let para = Paragraph::new(rows).block(block).wrap(Wrap { trim: false });

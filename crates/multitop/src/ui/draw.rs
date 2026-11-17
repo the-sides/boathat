@@ -60,7 +60,11 @@ fn draw_no_matches(f: &mut Frame, app: &App, theme: &PaletteView) {
 /// back on the stats screen.
 fn draw_modals(f: &mut Frame, app: &App) {
     if app.overlay.is_help() {
-        crate::modals::draw_help(f, &app.current_theme());
+        if app.boat.is_some() {
+            crate::modals::draw_boat_help(f, &app.current_theme());
+        } else {
+            crate::modals::draw_help(f, &app.current_theme());
+        }
         return;
     }
     if app.overlay.is_palette() {
@@ -97,6 +101,11 @@ fn draw_modals(f: &mut Frame, app: &App) {
 pub fn draw(f: &mut Frame, app: &mut App) {
     if app.password_manager.is_some() {
         crate::config_ui::draw(f, app);
+        draw_modals(f, app);
+        return;
+    }
+    if app.boat.as_ref().is_some_and(|state| state.list_open) {
+        super::boat_list::draw(f, app);
         draw_modals(f, app);
         return;
     }

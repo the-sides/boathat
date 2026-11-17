@@ -348,7 +348,7 @@ where
                         dirty = true;
                     }
                     Some(Ok(Event::Mouse(mouse))) => {
-                        if !super::boat::dismiss(&mut app, mouse, terminal_size(terminal, &dims)) {
+                        if !super::boat::handle_mouse(&mut app, mouse, terminal_size(terminal, &dims)) {
                             let _ = handle_mouse(&mut app, mouse, terminal_size(terminal, &dims));
                         }
                         dirty = true;

@@ -67,6 +67,9 @@ pub fn handle_key(
     if filter_keys(key, app) {
         return;
     }
+    if super::boat::keys(key, app) {
+        return;
+    }
     if focus_and_navigation_keys(key, app, dims, dims_rx, tx, tasks) {
         return;
     }

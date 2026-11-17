@@ -39,6 +39,7 @@ subtle = "2.6"
 regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["std"] }
+time = { version = "0.3", features = ["parsing"] }
 axum = { version = "0.8", features = ["json"] }
 # 0.5, and the reason this line ever mattered is in server_test.rs's
 # `the_tower_this_crate_declares_drives_the_router_axum_builds`. Declared 0.4

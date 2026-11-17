@@ -1,15 +1,17 @@
 //! Periodic Boat discovery and identity-preserving panel reconciliation.
 
 use crate::app::App;
+use crate::boat::Sandbox;
 use crate::config::Server;
 use crate::panel::{Mode, Panel};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 const STALE: &str = "Boat discovery unavailable; fleet state may be stale: ";
 
 pub(super) struct Feed {
-    rx: mpsc::Receiver<Result<Vec<Server>, String>>,
+    rx: mpsc::Receiver<Result<Vec<Sandbox>, String>>,
     task: JoinHandle<()>,
 }
 
@@ -35,7 +37,7 @@ impl Drop for Feed {
     }
 }
 
-pub(super) async fn next(feed: &mut Option<Feed>) -> Result<Vec<Server>, String> {
+pub(super) async fn next(feed: &mut Option<Feed>) -> Result<Vec<Sandbox>, String> {
     match feed {
         Some(feed) => match feed.rx.recv().await {
             Some(update) => update,
@@ -47,25 +49,32 @@ pub(super) async fn next(feed: &mut Option<Feed>) -> Result<Vec<Server>, String>
 
 /// Returns true only when the monitor task list must be restarted. A failed
 /// discovery keeps the last inventory; a successful one clears the stale note.
-pub(super) fn reconcile(app: &mut App, update: Result<Vec<Server>, String>) -> bool {
+pub(super) fn reconcile(app: &mut App, update: Result<Vec<Sandbox>, String>) -> bool {
+    let Some(state) = &mut app.boat else {
+        return false;
+    };
     let servers = match update {
-        Ok(servers) => servers,
+        Ok(inventory) => {
+            state.discovery_notice = None;
+            state.select(inventory)
+        }
         Err(error) => {
+            let message = format!("{STALE}{error}");
+            state.discovery_notice = Some(message.clone());
             for p in &mut app.panels {
                 p.notes.retain(|n| !n.starts_with(STALE));
-                p.note(format!("{STALE}{error}"));
+                p.note(message.clone());
             }
             return false;
         }
     };
-    let servers = if let Some(state) = &mut app.boat {
-        state.select(servers)
-    } else {
-        servers
-    };
     for p in &mut app.panels {
         p.notes.retain(|n| !n.starts_with(STALE));
     }
+    rebuild_panels(app, servers)
+}
+
+fn rebuild_panels(app: &mut App, servers: Vec<Server>) -> bool {
     if app.panels.iter().map(|p| &p.server).eq(servers.iter()) {
         return false;
     }
@@ -135,13 +144,72 @@ pub(super) fn reconcile(app: &mut App, update: Result<Vec<Server>, String>) -> b
     true
 }
 
-/// A click acknowledges only a stopped tile; running tiles keep ordinary focus.
-pub(super) fn dismiss(
-    app: &mut App,
-    mouse: crossterm::event::MouseEvent,
-    size: Option<(u16, u16)>,
-) -> bool {
-    use crossterm::event::{MouseButton, MouseEventKind};
+/// Boat-specific keys. Run after text entry and confirmation have had a turn.
+pub(super) fn keys(key: KeyEvent, app: &mut App) -> bool {
+    let Some(state) = &mut app.boat else {
+        return false;
+    };
+    if matches!(key.code, KeyCode::Char('c' | 'C'))
+        && !key
+            .modifiers
+            .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+    {
+        if key.code == KeyCode::Char('C') {
+            state.auto_clear = !state.auto_clear;
+        }
+        if key.code == KeyCode::Char('c') || state.auto_clear {
+            state.clear_dead();
+            let servers = state.servers();
+            rebuild_panels(app, servers);
+        }
+        return true;
+    }
+    if matches!(key.code, KeyCode::Char('l' | 'L')) {
+        state.list_open = !state.list_open;
+        state.list_scroll = 0;
+        app.focused_panel = None;
+        return true;
+    }
+    if !state.list_open {
+        return false;
+    }
+    match key.code {
+        KeyCode::Char('g' | 'G' | 's' | 'S') => {
+            state.list_open = false;
+            return false;
+        }
+        KeyCode::Esc if app.filter_query.trim().is_empty() => state.list_open = false,
+        KeyCode::Up | KeyCode::Char('k' | 'K') => {
+            state.list_scroll = state.list_scroll.saturating_sub(1);
+        }
+        KeyCode::Down | KeyCode::Char('j' | 'J') => {
+            state.list_scroll = state.list_scroll.saturating_add(1);
+        }
+        KeyCode::PageUp => state.list_scroll = state.list_scroll.saturating_sub(15),
+        KeyCode::PageDown => state.list_scroll = state.list_scroll.saturating_add(15),
+        KeyCode::Home => state.list_scroll = 0,
+        KeyCode::End => state.list_scroll = usize::MAX,
+        KeyCode::Esc | KeyCode::Char('/' | 'q' | 'Q' | 't' | 'T') => return false,
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => return false,
+        _ => {}
+    }
+    true
+}
+
+/// The list scrolls independently. A click in the grid can dismiss a dead tile.
+pub(super) fn handle_mouse(app: &mut App, mouse: MouseEvent, size: Option<(u16, u16)>) -> bool {
+    use crossterm::event::MouseButton;
+    let Some(state) = &mut app.boat else {
+        return false;
+    };
+    if state.list_open {
+        match mouse.kind {
+            MouseEventKind::ScrollUp => state.list_scroll = state.list_scroll.saturating_sub(3),
+            MouseEventKind::ScrollDown => state.list_scroll = state.list_scroll.saturating_add(3),
+            _ => {}
+        }
+        return true;
+    }
     if mouse.kind != MouseEventKind::Down(MouseButton::Left) {
         return false;
     }
@@ -154,26 +222,26 @@ pub(super) fn dismiss(
     ) else {
         return false;
     };
-    let host = app.panels[i].server.host.clone();
-    if !crate::boat::offline(&host) {
+    let host = &app.panels[i].server.host;
+    if !crate::boat::offline(host) {
         return false;
     }
-    let Some(id) = crate::boat::identity(&host).filter(|id| *id != "waiting") else {
+    let Some(id) = crate::boat::identity(host) else {
         return false;
     };
     let Some(state) = &mut app.boat else {
         return false;
     };
-    state.visible.remove(id);
-    let inventory = state.inventory.clone();
-    reconcile(app, Ok(inventory))
+    state.dismiss(id);
+    let servers = state.servers();
+    rebuild_panels(app, servers)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn fleet(states: &[(&str, &str)]) -> Vec<Server> {
+    fn fleet(states: &[(&str, &str)]) -> Vec<Sandbox> {
         let sandboxes: Vec<_> = states
             .iter()
             .map(|(id, state)| serde_json::json!({"id":id,"name":id,"state":state}))
@@ -186,18 +254,21 @@ mod tests {
 
     #[test]
     fn discovery_keeps_selection_and_scrollback_when_another_boat_is_deleted() {
-        let mut app = App::new(fleet(&[("bx_a", "idle"), ("bx_b", "idle")]));
-        app.selected_panel = 1;
-        app.focused_panel = Some(1);
-        app.panels[1].note("keep this history".into());
-        app.panels[1].mode = Mode::Graphs;
+        let mut app = super::super::boot::boot_boat_app(&[crate::boat::local_server()]);
+        assert!(reconcile(
+            &mut app,
+            Ok(fleet(&[("bx_a", "idle"), ("bx_b", "idle")]))
+        ));
+        app.selected_panel = 2;
+        app.focused_panel = Some(2);
+        app.panels[2].note("keep this history".into());
         let old_epoch = app.panels_epoch;
         assert!(reconcile(&mut app, Ok(fleet(&[("bx_b", "idle")]))));
         assert!(app.panels_epoch > old_epoch);
-        assert_eq!(app.selected_panel, 0);
-        assert_eq!(app.focused_panel, Some(0));
-        assert!(app.panels[0].notes.contains(&"keep this history".into()));
-        assert_eq!(app.panels[0].mode, Mode::Graphs);
+        assert_eq!(app.selected_panel, 1);
+        assert_eq!(app.focused_panel, Some(1));
+        assert!(app.panels[1].notes.contains(&"keep this history".into()));
+        assert_eq!(app.panels[1].mode, Mode::Graphs);
         assert!(!app.apply(crate::app::Msg::Frame {
             panel: 0,
             epoch: old_epoch,
@@ -276,30 +347,32 @@ mod tests {
     #[test]
     fn unchanged_inventory_does_not_restart_monitors_and_failures_keep_the_fleet() {
         let initial = fleet(&[("bx_a", "idle")]);
-        let mut app = App::new(initial.clone());
-        assert!(!reconcile(&mut app, Ok(initial.clone())));
+        let mut app = super::super::boot::boot_boat_app(&[crate::boat::local_server()]);
+        assert!(reconcile(&mut app, Ok(initial)));
+        assert!(!reconcile(&mut app, Ok(fleet(&[("bx_a", "idle")]))));
         assert!(!reconcile(&mut app, Err("offline".into())));
-        assert_eq!(app.panels.len(), 1);
+        assert_eq!(app.panels.len(), 2);
         assert!(app.panels[0].notes.iter().any(|n| n.starts_with(STALE)));
-        assert!(!reconcile(&mut app, Ok(initial)));
+        assert!(!reconcile(&mut app, Ok(fleet(&[("bx_a", "idle")]))));
         assert_eq!(app.panels[0].notes, [] as [String; 0]);
     }
 
     #[test]
     fn stopping_and_resuming_invalidates_old_samples_without_losing_identity() {
-        let mut app = App::new(fleet(&[("bx_a", "idle")]));
-        app.panels[0].last_frame = Some(vec!["stale CPU".into()]);
-        assert!(reconcile(&mut app, Ok(fleet(&[("bx_a", "stopped")]))));
-        assert!(app.panels[0].last_frame.is_none());
-        assert!(crate::boat::offline(&app.panels[0].server.host));
+        let mut app = super::super::boot::boot_boat_app(&[crate::boat::local_server()]);
         assert!(reconcile(&mut app, Ok(fleet(&[("bx_a", "idle")]))));
-        assert!(!crate::boat::offline(&app.panels[0].server.host));
-        assert!(app.panels[0].view.iter().any(|s| s.contains("Connecting")));
+        app.panels[1].last_frame = Some(vec!["stale CPU".into()]);
+        assert!(reconcile(&mut app, Ok(fleet(&[("bx_a", "stopped")]))));
+        assert!(app.panels[1].last_frame.is_none());
+        assert!(crate::boat::offline(&app.panels[1].server.host));
+        assert!(reconcile(&mut app, Ok(fleet(&[("bx_a", "idle")]))));
+        assert!(!crate::boat::offline(&app.panels[1].server.host));
+        assert!(app.panels[1].view.iter().any(|s| s.contains("Connecting")));
     }
     #[test]
     fn clicking_a_stopped_tile_dismisses_it_but_a_running_tile_is_only_selected() {
         use crossterm::event::{KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-        let mut app = App::new(vec![crate::boat::waiting("starting")]);
+        let mut app = App::new(vec![crate::boat::local_server()]);
         app.boat = Some(crate::boat_fleet::State::default());
         assert!(reconcile(
             &mut app,
@@ -315,15 +388,78 @@ mod tests {
             row: tiles[1].y + 2,
             modifiers: KeyModifiers::NONE,
         };
-        assert!(!dismiss(&mut app, click, Some((160, 40))));
+        assert!(!handle_mouse(&mut app, click, Some((160, 40))));
         assert!(reconcile(
             &mut app,
             Ok(fleet(&[("bx_a", "stopped"), ("bx_b", "stopped")]))
         ));
         assert_eq!(app.panels.len(), 2);
-        assert!(dismiss(&mut app, click, Some((160, 40))));
+        assert!(handle_mouse(&mut app, click, Some((160, 40))));
         assert_eq!(app.panels.len(), 1);
         assert!(crate::ssh::is_local(&app.panels[0].server));
         assert_eq!(app.boat.as_ref().unwrap().visible.len(), 0);
+    }
+
+    #[test]
+    fn clear_keys_handle_current_and_future_stops_and_allow_resumes() {
+        let mut app = super::super::boot::boot_boat_app(&[crate::boat::local_server()]);
+        let (tx, _) = mpsc::channel(1);
+        let (_, dims) = tokio::sync::watch::channel((120, 40));
+        let dims = std::sync::Arc::new(dims);
+        let mut tasks = super::super::Tasks::new(1);
+        let mut press = |app: &mut App, key| {
+            super::super::handle_key(
+                KeyEvent::new(KeyCode::Char(key), KeyModifiers::NONE),
+                app,
+                (120, 40),
+                &dims,
+                &tx,
+                &mut tasks,
+            );
+        };
+        let rows = |app: &App| {
+            app.boat
+                .as_ref()
+                .unwrap()
+                .list_rows()
+                .map(|b| b.id.clone())
+                .collect::<Vec<_>>()
+        };
+        let initial = [("bx_a", "stopped"), ("bx_b", "idle"), ("bx_c", "pending")];
+        reconcile(&mut app, Ok(fleet(&initial)));
+        press(&mut app, 'l');
+        assert!(app.boat.as_ref().unwrap().list_open);
+        assert_eq!(rows(&app), ["bx_b", "bx_c", "bx_a"]);
+
+        press(&mut app, 'c');
+        assert!(!app.boat.as_ref().unwrap().auto_clear);
+        reconcile(&mut app, Ok(fleet(&initial)));
+        assert_eq!(rows(&app), ["bx_b", "bx_c"]);
+
+        let newer = [
+            ("bx_a", "stopped"),
+            ("bx_b", "stopped"),
+            ("bx_c", "pending"),
+        ];
+        reconcile(&mut app, Ok(fleet(&newer)));
+        assert_eq!(rows(&app), ["bx_c", "bx_b"]);
+        press(&mut app, 'C');
+        assert!(app.boat.as_ref().unwrap().auto_clear);
+        assert_eq!(rows(&app), ["bx_c"]);
+        assert_eq!(app.panels.len(), 1);
+        reconcile(
+            &mut app,
+            Ok(fleet(&[("bx_a", "idle"), ("bx_d", "stopped")])),
+        );
+        assert_eq!(rows(&app), ["bx_a"]);
+        press(&mut app, 'C');
+        reconcile(
+            &mut app,
+            Ok(fleet(&[("bx_a", "stopped"), ("bx_d", "stopped")])),
+        );
+        assert_eq!(rows(&app), ["bx_a"]);
+        press(&mut app, 'G');
+        assert!(!app.boat.as_ref().unwrap().list_open);
+        assert_eq!(app.panels[0].mode, Mode::Graphs);
     }
 }

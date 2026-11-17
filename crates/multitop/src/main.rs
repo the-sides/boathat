@@ -208,10 +208,7 @@ fn resolve_servers(
     config_path: &Path,
 ) -> Result<(Vec<config::Server>, Option<String>), String> {
     if opts.boat {
-        return Ok((
-            vec![multitop::boat::waiting("Discovering Boat sandboxes…")],
-            None,
-        ));
+        return Ok((vec![multitop::boat::local_server()], None));
     }
     let local_server = config::Server {
         host: "localhost".into(),
@@ -311,7 +308,7 @@ fn main() -> ExitCode {
         }
     };
 
-    let has_remote = servers.iter().any(|s| !ssh::is_local(s));
+    let has_remote = opts.boat || servers.iter().any(|s| !ssh::is_local(s));
     if has_remote {
         if let Err(e) = require_ssh() {
             eprintln!("[Error] {e}");
@@ -504,13 +501,13 @@ mod tests {
     }
 
     #[test]
-    fn boat_mode_discovers_hosts_and_rejects_conflicting_modes() -> Result<(), String> {
+    fn boat_mode_starts_locally_and_rejects_conflicting_modes() -> Result<(), String> {
         let Startup::Run(opts) = cli(&["--boat"]) else {
             return Err("expected Boat mode".into());
         };
         assert!(opts.boat);
         let (servers, _) = resolve_servers(&opts, Path::new("/not/a/config"))?;
-        assert!(multitop::boat::offline(&servers[0].host));
+        assert_eq!(servers, [multitop::boat::local_server()]);
         for flags in [
             vec!["--boat", "--local"],
             vec!["--boat", "--serve"],

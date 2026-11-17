@@ -283,7 +283,7 @@ fn inactive_boat_shows_dead_lettering_instead_of_cached_graphs() {
     let _guard = multitop::password_store::lock_for_test();
     multitop::password_store::enable_mock_store();
     let mut app = fixture();
-    app.panels[0].server = boat::parse_inventory(br#"{"sandboxes":[{"id":"bx_demo","name":"Demo stopped","state":"stopping","type":"large"}]}"#).unwrap().remove(0);
+    app.panels[0].server = boat::parse_inventory(br#"{"sandboxes":[{"id":"bx_demo","name":"Demo stopped","state":"stopping","type":"large"}]}"#).unwrap().remove(0).server();
     app.panels[0].mode = Mode::Graphs;
     for (width, height) in [(160, 50), (80, 18), (40, 12)] {
         let output = text(&draw(&mut app, width, height));
@@ -296,10 +296,10 @@ fn inactive_boat_shows_dead_lettering_instead_of_cached_graphs() {
 }
 
 #[test]
-fn inventory_loading_placeholder_is_not_marked_dead() {
+fn local_tile_is_not_marked_dead_before_discovery() {
     let _guard = multitop::password_store::lock_for_test();
     multitop::password_store::enable_mock_store();
-    let mut app = App::new(vec![boat::waiting("Discovering boats")]);
+    let mut app = App::new(vec![boat::local_server()]);
     app.boat = Some(boat_fleet::State::default());
     let output = text(&draw(&mut app, 80, 24));
     assert!(!output.contains("DEAD") && !output.contains('#'));

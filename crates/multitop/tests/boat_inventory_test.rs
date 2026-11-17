@@ -49,7 +49,7 @@ async fn selecting_a_boat_never_writes_dashboard_state() {
     multitop::password_store::clear_mock_store();
     let dir = tempfile::tempdir().unwrap();
     let config = dir.path().join("missing/config.toml");
-    let mut app = multitop::app::App::new(vec![multitop::boat::waiting("Boat")]);
+    let mut app = multitop::app::App::new(vec![multitop::boat::local_server()]);
     app.boat = Some(multitop::boat_fleet::State::default());
     // Even an accidentally assigned config path cannot make a Boat selection
     // persist. The real Boat boot does not assign a path in the first place.
@@ -81,7 +81,8 @@ fn boat_upgrade_view_never_requests_credentials() {
         multitop::boat::local_server(),
         parse_inventory(br#"{"sandboxes":[{"id":"bx_alpha","state":"idle"}]}"#)
             .unwrap()
-            .remove(0),
+            .remove(0)
+            .server(),
     ]);
     app.boat = Some(multitop::boat_fleet::State::default());
     assert_eq!(
@@ -99,10 +100,12 @@ fn boat_upgrade_view_never_requests_credentials() {
 fn boat_identity_survives_state_and_address_changes() {
     let running = parse_inventory(br#"{"sandboxes":[{"id":"bx_alpha","name":"Build box","state":"idle","sshEndpoint":"old:123"}]}"#).unwrap();
     let stopped = parse_inventory(br#"{"sandboxes":[{"id":"bx_alpha","name":"Build box","state":"stopped","sshEndpoint":null}]}"#).unwrap();
-    assert_eq!(identity(&running[0].host), identity(&stopped[0].host));
-    assert!(!offline(&running[0].host));
-    assert!(offline(&stopped[0].host));
-    let cmd = transport(&running[0]).unwrap();
+    let running = running[0].server();
+    let stopped = stopped[0].server();
+    assert_eq!(identity(&running.host), identity(&stopped.host));
+    assert!(!offline(&running.host));
+    assert!(offline(&stopped.host));
+    let cmd = transport(&running).unwrap();
     let args: Vec<_> = cmd
         .as_std()
         .get_args()
@@ -119,7 +122,10 @@ fn inactive_boats_cannot_be_started_by_a_view_command() {
     )
     .unwrap();
     for server in boats {
-        assert_eq!(transport(&server).unwrap().as_std().get_program(), "false");
+        assert_eq!(
+            transport(&server.server()).unwrap().as_std().get_program(),
+            "false"
+        );
     }
 }
 
@@ -137,20 +143,14 @@ fn discovery_refuses_partial_duplicate_and_malformed_inventories() {
 }
 
 #[test]
-fn empty_inventory_is_visible_and_remote_names_are_plain_text() {
+fn empty_inventory_and_remote_names_are_plain_text() {
     let empty = parse_inventory(br#"{"sandboxes":[]}"#).unwrap();
-    assert!(offline(&empty[0].host));
-    assert!(empty[0].name.as_ref().unwrap().contains("No boats"));
+    assert!(empty.is_empty());
     let boats = parse_inventory(
         br#"{"sandboxes":[{"id":"bx_a","name":"box\u001b[31m\n","state":"idle"}]}"#,
     )
     .unwrap();
-    assert!(!boats[0]
-        .name
-        .as_ref()
-        .unwrap()
-        .chars()
-        .any(char::is_control));
+    assert!(!boats[0].name().chars().any(char::is_control));
 }
 
 #[test]
@@ -167,11 +167,11 @@ fn stopped_before_launch_stays_hidden_but_newly_stopped_waits_for_acknowledgment
         br#"{"sandboxes":[{"id":"bx_a","state":"stopped"},{"id":"bx_b","state":"stopped"}]}"#,
     )
     .unwrap();
-    let visible = state.select(stopped.clone());
+    let visible = state.select(stopped);
     assert_eq!(identity(&visible[1].host), Some("bx_a"));
     assert!(offline(&visible[1].host));
-    state.visible.remove("bx_a");
-    let visible = state.select(stopped);
+    state.dismiss("bx_a");
+    let visible = state.servers();
     assert_eq!(visible.len(), 1);
     assert!(multitop::ssh::is_local(&visible[0]));
     let resumed = parse_inventory(br#"{"sandboxes":[{"id":"bx_a","state":"idle"}]}"#).unwrap();
@@ -190,7 +190,12 @@ fn overall_cpu_is_core_weighted_and_excludes_missing_or_expired_samples() {
         br#"{"sandboxes":[{"id":"bx_a","state":"idle"},{"id":"bx_b","state":"idle"}]}"#,
     )
     .unwrap();
-    let mut app = multitop::app::App::new(servers.clone());
+    let mut app = multitop::app::App::new(
+        servers
+            .iter()
+            .map(multitop::boat::Sandbox::server)
+            .collect(),
+    );
     let mut state = multitop::boat_fleet::State::default();
     state.select(servers);
     for (panel, cpu, cores) in [(0, 100.0, 2), (1, 0.0, 6)] {
@@ -231,7 +236,8 @@ fn boat_titles_include_reported_size_for_running_and_stopped_machines() {
         .iter()
         .zip(["large", "xlarge", "default", "unknown", "large"])
     {
-        let name = boat.name.as_deref().unwrap();
+        let server = boat.server();
+        let name = server.name.as_deref().unwrap();
         assert!(name.ends_with(&format!("SIZE {size}")), "{name:?}");
         assert!(!name.chars().any(char::is_control));
     }
@@ -242,7 +248,12 @@ fn long_boat_names_keep_size_and_swap_visible_in_tile_titles() {
     let _guard = multitop::password_store::lock_for_test();
     multitop::password_store::enable_mock_store();
     let servers = parse_inventory(br#"{"sandboxes":[{"id":"bx_demo","name":"Very long demo machine name for an integration test with a distinctive suffix","state":"idle","type":"xlarge"}]}"#).unwrap();
-    let mut app = multitop::app::App::new(servers);
+    let mut app = multitop::app::App::new(
+        servers
+            .iter()
+            .map(multitop::boat::Sandbox::server)
+            .collect(),
+    );
     app.boat = Some(multitop::boat_fleet::State::default());
     app.apply(multitop::app::Msg::Packet {
         panel: 0,
@@ -265,4 +276,51 @@ fn long_boat_names_keep_size_and_swap_visible_in_tile_titles() {
         .collect();
     assert!(text.contains("SIZE xlarge"));
     assert!(text.contains("SWAP 1.0GiB/8.0GiB"));
+}
+
+#[test]
+fn list_draws_lease_and_live_metrics_on_one_row_above_stopped_boats() {
+    use multitop::app::{App, Msg};
+    use multitop_agent::{proc::Usage, proto::Payload, render::Snapshot};
+
+    let sandboxes = parse_inventory(br#"{"sandboxes":[
+        {"id":"bx_dead","name":"Finished","state":"stopped","subdomain":"hidden-dead"},
+        {"id":"bx_live","name":"Active build","state":"idle","type":"large","subdomain":"hidden-live","archiveAfter":"2099-12-31T12:34:56.789Z"}
+    ]}"#).unwrap();
+    assert_eq!(sandboxes[1].lease_deadline(), Some(4_102_403_696));
+    let mut state = multitop::boat_fleet::State::default();
+    state.list_open = true;
+    let mut app = App::new(state.select(sandboxes));
+    app.boat = Some(state);
+    assert!(app.apply(Msg::Packet {
+        panel: 1,
+        epoch: 0,
+        gen: 0,
+        dims: (100, 24),
+        payload: Payload::Monitor(Snapshot {
+            cpu_pct: 37.0,
+            mem: Usage::new(16 << 30, 6 << 30),
+            ..Snapshot::default()
+        }),
+    }));
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 12)).unwrap();
+    terminal
+        .draw(|frame| multitop::ui::draw(frame, &mut app))
+        .unwrap();
+    let screen = terminal.backend().buffer();
+    let row = |y| {
+        (0..120)
+            .map(|x| screen[(x, y)].symbol())
+            .collect::<String>()
+    };
+    let header = row(0);
+    assert!(header.contains("State") && header.contains("Time left") && header.contains("Name"));
+    let active = row(1);
+    for value in ["idle", "37%", "6.0GiB/16.0GiB", "large", "Active build"] {
+        assert!(active.contains(value), "{active}");
+    }
+    assert!(active.contains("h "));
+    assert!(row(2).contains("stopped") && row(2).contains("Finished"));
+    let frame = (0..12).map(row).collect::<String>();
+    assert!(!frame.contains("bx_") && !frame.contains("hidden-"));
 }

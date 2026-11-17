@@ -1,3 +1,4 @@
+mod boat_list;
 mod dead;
 mod draw;
 mod fleet;
