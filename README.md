@@ -13,16 +13,17 @@ cd boathat
 
 Requires Rust, the build backend's tools, and an authenticated Boat CLI.
 No GitHub App is required. Inventory refreshes every 15 seconds; metrics stream
-over SSH. Running boats and the local machine get live tiles. Boathat opens in
-the CPU and memory graph grid. Press `l` for the fleet list, with stopped boats
-at the bottom and CPU and memory on the same row.
+over SSH. Running boats and the local machine get live tiles. Boathat restores
+the last List, Graphs or Stats view and starts in Graphs on first launch.
+Press `l` for the fleet list, with stopped boats at the bottom and CPU and
+memory on the same row.
 
 The dashboard uses rounded frames, shaded CPU meters, height-tinted history
 graphs, memory, root disk, swap, and process tables. `G` opens graphs and `s`
 opens stats. `z` focuses a tile and `Esc` returns to the fleet. `c` dismisses
 stopped boxes from the dashboard, and `C` toggles automatic dismissal for the
 session. Dismissed boats reappear if they resume.
-Boat mode does not save fleet identities, graph history, or UI state, and never
+Fleet identities and graph history stay in the current session. BoatHat never
 creates, resumes, stops, or deletes boats. Boat authentication stays with its CLI.
 
 The project is named **boathat**; `toat` can be a shell alias for `boathat`.

@@ -65,7 +65,8 @@ and Home/End select its beginning/end. Titles show the reported **SIZE** (`defau
 capacity. On macOS, it is the currently allocated swap space, which can grow;
 it is not a hard maximum. Unavailable readings are marked explicitly.
 
-Boathat opens in graph view, which shows CPU and memory. Graph dots
+On first launch, Boathat opens in graph view, which shows CPU and memory.
+Later launches restore the last List, Graphs or Stats view. Graph dots
 change color with height, from the theme's healthy color through its primary
 color to a pale crest. Missing history stays blank. Zoom groups samples by
 peak so short CPU spikes remain visible.
@@ -75,10 +76,17 @@ core counts. For example, two cores at 100% and six idle cores report 25%.
 Samples older than 15 seconds are excluded. The reporting count makes missing
 coverage explicit; unavailable boats are not counted as zero CPU.
 
-Use `l` to toggle the fleet list. Each boat shows its state, time left on its
-lease, size, name, CPU and memory on one row. Long names wrap. Missing or stale
-readings appear as a dash. Scroll with the mouse wheel, arrow keys, or Page Up
-and Page Down.
+Use `l` to toggle the fleet list. **This Mac · Local** stays above the heavy
+divider with its own CPU, memory and swap readings. Scroll the boats below it
+with the mouse wheel, arrow keys, or Page Up and Page Down.
+
+Each boat shows its state, time left on its lease, size, name, CPU and memory.
+Sizes are abbreviated as S, D, L and XL. Memory uses compact binary units
+such as `6.0G/16.0G`.
+For running boats, **Run time** and **Compute $** show cumulative machine time
+and compute cost from `boat usage`, including any previous runs of the same
+sandbox. Usage refreshes once per minute while the list is open. Stopped boats
+and unavailable readings show a dash. Long names wrap.
 
 Use `G` for graphs, `s` for stats, `z` or Enter to focus a tile, `Esc` to go
 back, `/` to filter by boat name or ID, and `q` to quit.
@@ -86,7 +94,7 @@ back, `/` to filter by boat name or ID, and `q` to quit.
 ## Scope
 
 Boat mode is the interactive dashboard; it cannot be combined with static host,
-local, headless-server or Ops-poller modes. Selection, view preferences, themes
-and graph history are session-only: they are neither loaded nor saved to disk.
+local, headless-server or Ops-poller modes. Selection, themes and graph history
+stay in the current session.
 Boat discovery owns its host list, so static-host Settings are unavailable.
 Boat billing and snapshot metrics are not collected by the SSH system monitor.

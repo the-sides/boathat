@@ -272,6 +272,7 @@ where
 {
     let servers = fleet.initial();
     let mut boat_feed = matches!(fleet, super::Fleet::Boat).then(super::boat::Feed::start);
+    let boat_view_path = config_path.with_file_name("boat-view");
     // First, before the config read, the state read and the vault probe: a stop
     // that lands in that window is a stop with no handler to catch it and no
     // `SIGCONT` handler to repair the terminal afterwards. A failure to install
@@ -292,7 +293,7 @@ where
     let mut signals: Option<()> = None;
 
     let mut app = if boat_feed.is_some() {
-        super::boot::boot_boat_app(&servers)
+        super::boot::boot_boat_app(&servers, super::boat::View::load(&boat_view_path))
     } else {
         boot_app(&servers, &config_path, initial_theme.as_deref())
     };
@@ -323,8 +324,9 @@ where
 
         tokio::select! {
             update = super::boat::next(&mut boat_feed) => {
-                super::boat::reconcile(&mut app, update);
-                dirty = true;
+                if let Some(feed) = &boat_feed {
+                    dirty |= feed.apply(&mut app, update);
+                }
             },
             action = next_terminal_signal(&mut signals) => match action {
                 SignalAction::Quit => app.quit(),
@@ -342,7 +344,21 @@ where
                 match maybe {
                     Some(Ok(Event::Key(key))) => {
                         diag.bump_key();
+                        let previous_view = super::boat::View::current(&app);
                         handle_key(key, &mut app, dims.current(), &dims_rx, &tx, &mut tasks);
+                        let view = super::boat::View::current(&app);
+                        if let Some(feed) = boat_feed.as_ref().filter(|_| view != previous_view) {
+                            if let Some(view) = view {
+                                if let Err(error) = view.save(&boat_view_path) {
+                                    crate::diag::report(&format!("Cannot save Boat view: {error}"));
+                                }
+                            }
+                            if (view == Some(super::boat::View::List))
+                                != (previous_view == Some(super::boat::View::List))
+                            {
+                                feed.sync_usage_targets(&app);
+                            }
+                        }
                         tasks.retire_ops(&app.panels);
                         refit(terminal, &mut dims, &mut app);
                         dirty = true;

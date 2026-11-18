@@ -5,13 +5,18 @@
 use crate::app::App;
 use crate::config::Server;
 
-/// Boat is a session-only dashboard: no saved selection, settings, vault or
-/// upgrade state is loaded. Its host list comes from the Boat CLI.
-pub(super) fn boot_boat_app(servers: &[Server]) -> App {
+/// Restore the Boat view independently of the configured-host dashboard.
+pub(super) fn boot_boat_app(servers: &[Server], view: super::boat::View) -> App {
     let mut app = App::new(servers.to_vec());
-    app.boat = Some(crate::boat_fleet::State::default());
+    let mut state = crate::boat_fleet::State::default();
+    state.list_open = view == super::boat::View::List;
+    app.boat = Some(state);
     for panel in &mut app.panels {
-        panel.mode = crate::panel::Mode::Graphs;
+        panel.mode = if view == super::boat::View::Stats {
+            crate::panel::Mode::Monitor
+        } else {
+            crate::panel::Mode::Graphs
+        };
     }
     app.background = crate::background::detect();
     app.rebuild_palette_view();
@@ -192,7 +197,10 @@ mod tests {
 
     #[test]
     fn boat_boot_has_no_persistent_config_or_vault() {
-        let app = super::boot_boat_app(&[crate::boat::local_server()]);
+        let app = super::boot_boat_app(
+            &[crate::boat::local_server()],
+            crate::run::boat::View::Graphs,
+        );
         assert!(!app.boat.as_ref().unwrap().list_open);
         assert_eq!(app.panels[0].mode, crate::panel::Mode::Graphs);
         assert!(app.config_path.is_none());

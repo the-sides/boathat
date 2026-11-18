@@ -11,6 +11,7 @@ use crate::config::Server;
 
 pub const POLL_INTERVAL: Duration = Duration::from_secs(15);
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(12);
+pub(crate) const USAGE_INTERVAL: Duration = Duration::from_secs(60);
 const ACTIVE: &str = "boat:";
 const OFFLINE: &str = "boat-offline:";
 
@@ -182,6 +183,28 @@ pub async fn discover() -> Result<Vec<Sandbox>, String> {
         return Err("Boat discovery failed. Check boat status / boat login.".into());
     }
     parse_inventory(&output.stdout)
+}
+
+#[derive(Deserialize)]
+pub(crate) struct Usage {
+    pub seconds: u64,
+    pub dollars: f64,
+}
+
+/// Boat reports cumulative machine time and compute cost for this sandbox.
+pub(crate) async fn usage(id: &str) -> Option<Usage> {
+    let mut cmd = Command::new(executable());
+    cmd.args(["--no-update", "usage", id, "--json"])
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(DISCOVERY_TIMEOUT, cmd.output())
+        .await
+        .ok()?
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let usage: Usage = serde_json::from_slice(&output.stdout).ok()?;
+    (usage.dollars.is_finite() && usage.dollars >= 0.0).then_some(usage)
 }
 
 /// This machine is sampled directly by the embedded native collector, not SSH.

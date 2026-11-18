@@ -284,7 +284,7 @@ fn list_draws_lease_and_live_metrics_on_one_row_above_stopped_boats() {
     use multitop_agent::{proc::Usage, proto::Payload, render::Snapshot};
 
     let sandboxes = parse_inventory(br#"{"sandboxes":[
-        {"id":"bx_dead","name":"Finished","state":"stopped","subdomain":"hidden-dead"},
+        {"id":"bx_dead","name":"Finished","state":"stopped","type":"xlarge","subdomain":"hidden-dead"},
         {"id":"bx_live","name":"Active build","state":"idle","type":"large","subdomain":"hidden-live","archiveAfter":"2099-12-31T12:34:56.789Z"}
     ]}"#).unwrap();
     assert_eq!(sandboxes[1].lease_deadline(), Some(4_102_403_696));
@@ -292,6 +292,18 @@ fn list_draws_lease_and_live_metrics_on_one_row_above_stopped_boats() {
     state.list_open = true;
     let mut app = App::new(state.select(sandboxes));
     app.boat = Some(state);
+    assert!(app.apply(Msg::Packet {
+        panel: 0,
+        epoch: 0,
+        gen: 0,
+        dims: (100, 24),
+        payload: Payload::Monitor(Snapshot {
+            cpu_pct: 14.0,
+            mem: Usage::new(32 << 30, 8 << 30),
+            swap: Some(Usage::new(8 << 30, 1 << 30)),
+            ..Snapshot::default()
+        }),
+    }));
     assert!(app.apply(Msg::Packet {
         panel: 1,
         epoch: 0,
@@ -313,14 +325,36 @@ fn list_draws_lease_and_live_metrics_on_one_row_above_stopped_boats() {
             .map(|x| screen[(x, y)].symbol())
             .collect::<String>()
     };
-    let header = row(0);
+    assert!(row(0).contains("This Mac · Local"));
+    let metrics = row(1);
+    for value in ["CPU 14%", "Memory 8.0G/32.0G", "Swap 1.0G/8.0G"] {
+        assert!(metrics.contains(value), "{metrics}");
+    }
+    assert_eq!(row(2), "━".repeat(120));
+    assert!(row(3).contains("Boat sandboxes"));
+    let header = row(4);
     assert!(header.contains("State") && header.contains("Time left") && header.contains("Name"));
-    let active = row(1);
-    for value in ["idle", "37%", "6.0GiB/16.0GiB", "large", "Active build"] {
+    assert!(header.contains("Run time") && header.contains("Compute $"));
+    let active = row(5);
+    for value in ["idle", "37%", "6.0G/16.0G", " L ", "Active build"] {
         assert!(active.contains(value), "{active}");
     }
     assert!(active.contains("h "));
-    assert!(row(2).contains("stopped") && row(2).contains("Finished"));
+    assert!(row(6).contains("stopped") && row(6).contains(" XL ") && row(6).contains("Finished"));
     let frame = (0..12).map(row).collect::<String>();
     assert!(!frame.contains("bx_") && !frame.contains("hidden-"));
+
+    let mut compact = ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 7)).unwrap();
+    app.boat.as_mut().unwrap().list_scroll = usize::MAX;
+    compact.draw(|f| multitop::ui::draw(f, &mut app)).unwrap();
+    let compact_screen = compact.backend().buffer();
+    let compact_row = |y| {
+        (0..80)
+            .map(|x| compact_screen[(x, y)].symbol())
+            .collect::<String>()
+    };
+    assert!(compact_row(0).contains("This Mac · Local"));
+    assert_eq!(compact_row(2), "━".repeat(80));
+    assert!(compact_row(4).contains("Run time") && compact_row(4).contains("Compute $"));
+    assert!(compact_row(5).contains("Finished"));
 }

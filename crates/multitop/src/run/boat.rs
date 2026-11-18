@@ -1,34 +1,162 @@
 //! Periodic Boat discovery and identity-preserving panel reconciliation.
 
+use std::path::Path;
+
 use crate::app::App;
-use crate::boat::Sandbox;
+use crate::boat::{Sandbox, Usage, USAGE_INTERVAL};
 use crate::config::Server;
 use crate::panel::{Mode, Panel};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
-use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
+use tokio::sync::{mpsc, watch};
+use tokio::task::{JoinHandle, JoinSet};
 
 const STALE: &str = "Boat discovery unavailable; fleet state may be stale: ";
+const USAGE_CONCURRENCY: usize = 4;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum View {
+    List,
+    #[default]
+    Graphs,
+    Stats,
+}
+
+impl View {
+    pub fn current(app: &App) -> Option<Self> {
+        if app.boat.as_ref()?.list_open {
+            return Some(Self::List);
+        }
+        match app.panels.first()?.mode {
+            Mode::Graphs => Some(Self::Graphs),
+            Mode::Monitor => Some(Self::Stats),
+            _ => None,
+        }
+    }
+
+    pub fn load(path: &Path) -> Self {
+        match std::fs::read_to_string(path).as_deref().map(str::trim) {
+            Ok("list") => Self::List,
+            Ok("stats") => Self::Stats,
+            _ => Self::Graphs,
+        }
+    }
+
+    pub fn save(self, path: &Path) -> Result<(), String> {
+        if let Some(parent) = path
+            .parent()
+            .filter(|parent| !parent.as_os_str().is_empty())
+        {
+            std::fs::create_dir_all(parent).map_err(|err| err.to_string())?;
+        }
+        let value = match self {
+            Self::List => "list\n",
+            Self::Graphs => "graphs\n",
+            Self::Stats => "stats\n",
+        };
+        crate::state::write_atomic(path, value)
+    }
+}
+
+pub(super) enum Update {
+    Inventory(Result<Vec<Sandbox>, String>),
+    Usage(String, Option<Usage>),
+}
 
 pub(super) struct Feed {
-    rx: mpsc::Receiver<Result<Vec<Sandbox>, String>>,
+    rx: mpsc::Receiver<Update>,
+    usage_targets: watch::Sender<Vec<String>>,
     task: JoinHandle<()>,
 }
 
 impl Feed {
     pub fn start() -> Self {
         let (tx, rx) = mpsc::channel(1);
+        let (usage_targets, targets) = watch::channel(Vec::new());
         let task = tokio::spawn(async move {
-            loop {
-                let result = crate::boat::discover().await;
-                if tx.send(result).await.is_err() {
-                    break;
-                }
-                tokio::time::sleep(crate::boat::POLL_INTERVAL).await;
-            }
+            tokio::join!(poll_inventory(&tx), poll_usage(&tx, targets));
         });
-        Self { rx, task }
+        Self {
+            rx,
+            usage_targets,
+            task,
+        }
     }
+
+    pub fn apply(&self, app: &mut App, update: Update) -> bool {
+        match update {
+            Update::Inventory(inventory) => {
+                reconcile(app, inventory);
+                self.sync_usage_targets(app);
+                true
+            }
+            Update::Usage(id, usage) => apply_usage(app, id, usage),
+        }
+    }
+
+    pub fn sync_usage_targets(&self, app: &App) {
+        let targets = app
+            .boat
+            .as_ref()
+            .filter(|state| state.list_open && state.discovery_notice.is_none())
+            .map_or_else(Vec::new, |state| {
+                state
+                    .inventory
+                    .iter()
+                    .filter(|boat| boat.is_running())
+                    .map(|boat| boat.id.clone())
+                    .collect()
+            });
+        self.usage_targets.send_if_modified(|previous| {
+            if *previous == targets {
+                return false;
+            }
+            *previous = targets;
+            true
+        });
+    }
+}
+
+async fn poll_inventory(tx: &mpsc::Sender<Update>) {
+    loop {
+        let result = crate::boat::discover().await;
+        if tx.send(Update::Inventory(result)).await.is_err() {
+            return;
+        }
+        tokio::time::sleep(crate::boat::POLL_INTERVAL).await;
+    }
+}
+
+async fn poll_usage(tx: &mpsc::Sender<Update>, mut targets: watch::Receiver<Vec<String>>) {
+    loop {
+        let ids = targets.borrow_and_update().clone();
+        tokio::select! {
+            () = usage_round(tx, &ids), if !ids.is_empty() => {}
+            changed = targets.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+            }
+        }
+    }
+}
+
+async fn usage_round(tx: &mpsc::Sender<Update>, ids: &[String]) {
+    let mut pending = JoinSet::new();
+    for group in ids.chunks(USAGE_CONCURRENCY) {
+        for id in group.iter().cloned() {
+            pending.spawn(async move {
+                let usage = crate::boat::usage(&id).await;
+                Update::Usage(id, usage)
+            });
+        }
+        while let Some(result) = pending.join_next().await {
+            let Ok(update) = result else { continue };
+            if tx.send(update).await.is_err() {
+                return;
+            }
+        }
+    }
+    tokio::time::sleep(USAGE_INTERVAL).await;
 }
 
 impl Drop for Feed {
@@ -37,7 +165,7 @@ impl Drop for Feed {
     }
 }
 
-pub(super) async fn next(feed: &mut Option<Feed>) -> Result<Vec<Sandbox>, String> {
+pub(super) async fn next(feed: &mut Option<Feed>) -> Update {
     match feed {
         Some(feed) => match feed.rx.recv().await {
             Some(update) => update,
@@ -45,6 +173,26 @@ pub(super) async fn next(feed: &mut Option<Feed>) -> Result<Vec<Sandbox>, String
         },
         None => std::future::pending().await,
     }
+}
+
+fn apply_usage(app: &mut App, id: String, usage: Option<Usage>) -> bool {
+    let Some(state) = &mut app.boat else {
+        return false;
+    };
+    if state.discovery_notice.is_some()
+        || !state
+            .inventory
+            .iter()
+            .any(|boat| boat.id == id && boat.is_running())
+    {
+        return false;
+    }
+    if let Some(usage) = usage {
+        state.usage.insert(id, usage);
+    } else {
+        state.usage.remove(&id);
+    }
+    state.list_open
 }
 
 /// Returns true only when the monitor task list must be restarted. A failed
@@ -253,8 +401,24 @@ mod tests {
     }
 
     #[test]
+    fn boat_view_round_trips_to_the_next_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("preferences/boat-view");
+        assert_eq!(View::load(&path), View::Graphs);
+        for view in [View::List, View::Stats, View::Graphs] {
+            view.save(&path).unwrap();
+            let app = super::super::boot::boot_boat_app(
+                &[crate::boat::local_server()],
+                View::load(&path),
+            );
+            assert_eq!(View::current(&app), Some(view));
+        }
+    }
+
+    #[test]
     fn discovery_keeps_selection_and_scrollback_when_another_boat_is_deleted() {
-        let mut app = super::super::boot::boot_boat_app(&[crate::boat::local_server()]);
+        let mut app =
+            super::super::boot::boot_boat_app(&[crate::boat::local_server()], View::Graphs);
         assert!(reconcile(
             &mut app,
             Ok(fleet(&[("bx_a", "idle"), ("bx_b", "idle")]))
@@ -347,7 +511,8 @@ mod tests {
     #[test]
     fn unchanged_inventory_does_not_restart_monitors_and_failures_keep_the_fleet() {
         let initial = fleet(&[("bx_a", "idle")]);
-        let mut app = super::super::boot::boot_boat_app(&[crate::boat::local_server()]);
+        let mut app =
+            super::super::boot::boot_boat_app(&[crate::boat::local_server()], View::Graphs);
         assert!(reconcile(&mut app, Ok(initial)));
         assert!(!reconcile(&mut app, Ok(fleet(&[("bx_a", "idle")]))));
         assert!(!reconcile(&mut app, Err("offline".into())));
@@ -359,7 +524,8 @@ mod tests {
 
     #[test]
     fn stopping_and_resuming_invalidates_old_samples_without_losing_identity() {
-        let mut app = super::super::boot::boot_boat_app(&[crate::boat::local_server()]);
+        let mut app =
+            super::super::boot::boot_boat_app(&[crate::boat::local_server()], View::Graphs);
         assert!(reconcile(&mut app, Ok(fleet(&[("bx_a", "idle")]))));
         app.panels[1].last_frame = Some(vec!["stale CPU".into()]);
         assert!(reconcile(&mut app, Ok(fleet(&[("bx_a", "stopped")]))));
@@ -402,7 +568,8 @@ mod tests {
 
     #[test]
     fn clear_keys_handle_current_and_future_stops_and_allow_resumes() {
-        let mut app = super::super::boot::boot_boat_app(&[crate::boat::local_server()]);
+        let mut app =
+            super::super::boot::boot_boat_app(&[crate::boat::local_server()], View::Graphs);
         let (tx, _) = mpsc::channel(1);
         let (_, dims) = tokio::sync::watch::channel((120, 40));
         let dims = std::sync::Arc::new(dims);

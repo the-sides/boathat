@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
-use crate::boat::{identity, offline, Sandbox, POLL_INTERVAL};
+use crate::boat::{identity, offline, Sandbox, Usage, POLL_INTERVAL};
 use crate::config::Server;
 use crate::panel::Panel;
 use multitop_agent::{proto::Payload, render::Snapshot};
@@ -13,6 +13,7 @@ pub struct State {
     pub inventory: Vec<Sandbox>,
     pub visible: BTreeSet<String>,
     pub samples: BTreeMap<String, Instant>,
+    pub(crate) usage: BTreeMap<String, Usage>,
     pub auto_clear: bool,
     pub list_open: bool,
     pub list_scroll: usize,
@@ -25,6 +26,11 @@ impl State {
     pub fn select(&mut self, inventory: Vec<Sandbox>) -> Vec<Server> {
         self.inventory = inventory;
         self.discovered = true;
+        self.usage.retain(|id, _| {
+            self.inventory
+                .iter()
+                .any(|boat| &boat.id == id && boat.is_running())
+        });
         self.visible
             .retain(|id| self.inventory.iter().any(|boat| &boat.id == id));
         self.dismissed.retain(|id| {
