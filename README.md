@@ -1,8 +1,20 @@
 # boathat
 
-A live Boat fleet dashboard, built on [multitop](https://github.com/ztomer/multitop).
-Run `./boathat` for automatic Boat discovery and a live SSH metrics grid.
-See [Boat fleet dashboard](docs/boat.md) for setup and behavior.
+**Multitop + btop + a Boat fleet dashboard.** Boathat uses
+[Multitop](https://github.com/ztomer/multitop) for live monitoring over SSH,
+heavily copies [btop](https://github.com/aristocratos/btop)'s terminal layout,
+styling, and keyboard controls, and adds automatic Boat discovery and fleet
+management views.
+
+![Boathat's Stats grid. This Mac and Build lab are on the top row. The Boat titles ci-worker [idle] and preview-web [running] are on the bottom row.](docs/images/boathat-stats.png)
+
+**Boat tiles, bottom row:** `ci-worker [idle] | SIZE large` and
+`preview-web [running] | SIZE xlarge`. Their titles show the sandbox name,
+state, and size at a glance. The top row shows the local Mac and a configured
+SSH host. All readings are sample data.
+
+Run `./boathat` for a live grid of your fleet. See the
+[Boat fleet dashboard guide](docs/boat.md) for setup and configuration.
 
 ```sh
 git clone https://github.com/the-sides/boathat.git
@@ -19,9 +31,9 @@ the last List, Graphs or Stats view and starts in Graphs on first launch.
 Press `l` for the fleet list, with stopped boats at the bottom and CPU and
 memory on the same row.
 
-The dashboard uses rounded frames, shaded CPU meters, height-tinted history
-graphs, memory, root disk, swap, and process tables. `G` opens graphs and `s`
-opens stats. `z` focuses a tile and `Esc` returns to the fleet. `c` dismisses
+Press `s` for the btop-style Stats view. Toggle CPU, memory and swap, network,
+and processes with `1`–`4`, and disks with `d`. `G` opens graphs, `z` focuses
+a tile, and `Esc` returns to the fleet. `c` dismisses
 stopped boxes from the dashboard, and `C` toggles automatic dismissal for the
 session. Dismissed boats reappear if they resume.
 Fleet identities and graph history stay in the current session. BoatHat never
