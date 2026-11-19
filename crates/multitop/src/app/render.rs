@@ -7,6 +7,9 @@ impl App {
     pub fn cycle_theme(&mut self) {
         self.theme_idx = (self.theme_idx + 1) % multitop_agent::color::THEMES.len();
         self.rebuild_palette_view();
+        if let Some(fleet) = &mut self.boat {
+            fleet.display.stats_text = self.palette_view.page.text;
+        }
     }
 
     /// The palette the renderers draw with, adapted for the detected background.
@@ -95,11 +98,15 @@ impl App {
                 }
                 Mode::Fetch => {
                     if let Some(snap) = &panel.last_fetch {
-                        let lines = crate::fetch_render::render_fetch(
+                        let lines = crate::fetch_render::render_fetch_with_memory(
                             snap,
                             dims.0 as usize,
                             dims.1 as usize,
                             pal,
+                            !self
+                                .boat
+                                .as_ref()
+                                .is_some_and(|fleet| fleet.display.hide_memory),
                         );
                         panel.show_frame(lines);
                     }

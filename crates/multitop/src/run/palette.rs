@@ -44,6 +44,14 @@ pub(super) fn execute_palette_command(
         if old != app.sort {
             app.persist_state();
         }
+    } else if let Some(color) = input.strip_prefix("text ") {
+        if let Some(fleet) = &mut app.boat {
+            if color == "default" {
+                fleet.display.stats_text = None;
+            } else if let Some(rgb) = parse_rgb(color) {
+                fleet.display.stats_text = Some(rgb);
+            }
+        }
     } else if input == "theme" || input.starts_with("theme ") {
         app.cycle_theme();
         if let Some(ref path) = app.config_path {
@@ -68,6 +76,18 @@ pub(super) fn execute_palette_command(
     } else if input == "yank" || input.starts_with("yank ") || input == "y" || input == "copy" {
         yank_selected_host(app);
     }
+}
+
+fn parse_rgb(text: &str) -> Option<multitop_agent::surface::Rgb> {
+    let hex = text.strip_prefix('#')?;
+    if hex.len() != 6 || !hex.bytes().all(|digit| digit.is_ascii_hexdigit()) {
+        return None;
+    }
+    Some(multitop_agent::surface::Rgb {
+        r: u8::from_str_radix(&hex[..2], 16).ok()?,
+        g: u8::from_str_radix(&hex[2..4], 16).ok()?,
+        b: u8::from_str_radix(&hex[4..], 16).ok()?,
+    })
 }
 
 /// A palette word that switches the view, and the commands the switch made.

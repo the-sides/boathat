@@ -23,6 +23,8 @@ fn title_shows_swap_used_and_allocated_instead_of_cpu_percentage() {
         dims: (158, 40),
         payload: multitop_agent::proto::Payload::Monitor(multitop_agent::render::Snapshot {
             host: "local".into(),
+            cpu_pct: 70.0,
+            cores: vec![(0, 70.0, None)],
             swap: Some(multitop_agent::proc::Usage::new(8 << 30, 1 << 30)),
             ..multitop_agent::render::Snapshot::default()
         }),
@@ -40,6 +42,38 @@ fn title_shows_swap_used_and_allocated_instead_of_cpu_percentage() {
         .collect();
     assert!(text.contains("SWAP 1.0GiB/8.0GiB"), "{text}");
     assert!(!text.contains("| CPU"), "{text}");
+    let screen = terminal.backend().buffer();
+    let row = |y| {
+        (0..160)
+            .map(|x| screen[(x, y)].symbol())
+            .collect::<String>()
+    };
+    assert!(row(1).contains("┐¹cpu┌"));
+    // The 37-row tile interior gives CPU 12 rows, then mem and proc
+    // share the same top row. The memory width rounds to 71 columns.
+    let lower = row(13);
+    assert!(lower.contains("┐²mem┌"));
+    assert!(lower.contains("┐⁴proc┌"));
+    assert_eq!(screen[(72, 13)].symbol(), "╭");
+    assert!(text.contains("CPU ■"));
+    assert!(text.contains("Swap:") && text.contains("1.0GiB / 8.0GiB"));
+    assert!(!text.contains("Free") && !text.contains("disks / swap"));
+    for height in [18, 12] {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(160, height)).unwrap();
+        terminal
+            .draw(|frame| multitop::ui::draw(frame, &mut app))
+            .unwrap();
+        let resized: String = terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(ratatui::buffer::Cell::symbol)
+            .collect();
+        assert!(resized.contains("┐⁴proc┌") && resized.contains('■'));
+        assert_eq!(resized.contains("┐²mem┌"), height == 18);
+    }
 }
 
 #[tokio::test]

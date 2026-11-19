@@ -27,6 +27,7 @@ const FULL_WIDTHS: [u16; 8] = [8, 10, 5, 13, 4, 9, 9, 8];
 const COMPACT_WIDTHS: [u16; 8] = [8, 9, 5, 6, 4, 9, 9, 8];
 const GAP: u16 = 2;
 const NAME: usize = 7;
+const MEMORY: usize = 3;
 const MISSING: &str = "—";
 
 pub(super) fn draw(f: &mut Frame, app: &mut App) {
@@ -71,7 +72,12 @@ pub(super) fn draw(f: &mut Frame, app: &mut App) {
             .border_style(accent),
         divider,
     );
-    f.render_widget(Paragraph::new("Boat sandboxes").style(accent), heading);
+    let heading_text = if state.ssh_servers.is_empty() {
+        "Boat sandboxes"
+    } else {
+        "SSH hosts and Boat sandboxes"
+    };
+    f.render_widget(Paragraph::new(heading_text).style(accent), heading);
     let scroll = draw_table(f, table, app, state, &theme);
     if let Some(state) = &mut app.boat {
         state.list_scroll = scroll;
@@ -102,13 +108,17 @@ fn draw_local(f: &mut Frame, area: Rect, app: &App, state: &State, theme: &Palet
         || MISSING.into(),
         |usage| format!("{}/{}", compact_size(usage.used), compact_size(usage.total)),
     );
-    f.render_widget(
-        Paragraph::new(format!(
-            "CPU {}   Memory {}   Swap {swap}",
-            cpu(sample),
+    let cpu = cpu(sample);
+    let status = if state.display.hide_memory {
+        format!("CPU {cpu}")
+    } else {
+        format!(
+            "CPU {cpu}   Memory {}   Swap {swap}",
             memory(sample, area.width >= 64)
-        ))
-        .style(Style::default().fg(ink(theme.page.text))),
+        )
+    };
+    f.render_widget(
+        Paragraph::new(status).style(Style::default().fg(ink(theme.page.text))),
         metrics,
     );
 }
@@ -121,32 +131,55 @@ fn draw_table(f: &mut Frame, body: Rect, app: &App, state: &State, theme: &Palet
         .collect();
     let query = app.filter_query.trim().to_lowercase();
     let now = now_epoch();
-    let body_width = usize::from(body.width);
-    let gap = usize::from(GAP);
-    let full = body_width >= FULL_WIDTHS.map(usize::from).into_iter().sum::<usize>() + gap * NAME;
-    let widths = if full { FULL_WIDTHS } else { COMPACT_WIDTHS };
-    let columns = fit_row(
-        &widths.map(usize::from),
-        gap,
-        body_width,
-        &[4, 1, 3, 2, 0, 6, 5],
-    );
-    let name_width = body_width.saturating_sub(
-        columns
-            .iter()
-            .filter(|&&i| i != NAME)
-            .map(|&i| usize::from(widths[i] + GAP))
-            .sum(),
-    );
+    let ListColumns {
+        columns,
+        widths,
+        name_width,
+        full,
+    } = list_columns(usize::from(body.width), state.display.hide_memory);
     let mut rows = Vec::new();
+    let mut add_rows = |name: &str, values: [String; NAME], style: Style| {
+        for (line, name) in name_lines(name, name_width).into_iter().enumerate() {
+            rows.push(
+                Row::new(columns.iter().map(|&i| {
+                    if i == NAME {
+                        name.to_owned()
+                    } else if line == 0 {
+                        values[i].clone()
+                    } else {
+                        String::new()
+                    }
+                }))
+                .style(style),
+            );
+        }
+    };
+    let normal = Style::default().fg(ink(theme.page.text));
+    for panel in app.panels.iter().filter(|panel| {
+        !crate::ssh::is_local(&panel.server)
+            && crate::boat::identity(&panel.server.host).is_none()
+            && panel.matches_filter(&query)
+    }) {
+        let server = &panel.server;
+        let sample = state.fresh_sample(panel);
+        add_rows(
+            server.name.as_deref().unwrap_or(&server.host),
+            [
+                "SSH".into(),
+                MISSING.into(),
+                cpu(sample),
+                memory(sample, full),
+                MISSING.into(),
+                MISSING.into(),
+                MISSING.into(),
+            ],
+            normal,
+        );
+    }
     for boat in state.list_rows().filter(|boat| matches(boat, &query)) {
         let sample = panels
             .get(boat.id.as_str())
             .and_then(|panel| state.fresh_sample(panel));
-        let names = name_lines(boat.name(), name_width);
-        let Some((name, continuation)) = names.split_first() else {
-            continue;
-        };
         let usage = state
             .usage
             .get(&boat.id)
@@ -159,18 +192,13 @@ fn draw_table(f: &mut Frame, body: Rect, app: &App, state: &State, theme: &Palet
             size_label(boat.size()).into(),
             usage.map_or_else(|| MISSING.into(), |usage| run_time(usage.seconds)),
             usage.map_or_else(|| MISSING.into(), |usage| compute_cost(usage.dollars)),
-            (*name).into(),
         ];
-        let color = if boat.is_dead() {
-            theme.page.muted
+        let style = if boat.is_dead() {
+            Style::default().fg(ink(theme.page.muted))
         } else {
-            theme.page.text
+            normal
         };
-        let style = Style::default().fg(ink(color));
-        rows.push(Row::new(columns.iter().map(|&i| values[i].clone())).style(style));
-        rows.extend(continuation.iter().map(|name| {
-            Row::new(columns.iter().map(|&i| if i == NAME { *name } else { "" })).style(style)
-        }));
+        add_rows(boat.name(), values, style);
     }
     let scroll = state.list_scroll.min(
         rows.len()
@@ -180,7 +208,7 @@ fn draw_table(f: &mut Frame, body: Rect, app: &App, state: &State, theme: &Palet
         let message = if !state.discovered && state.discovery_notice.is_none() {
             "Discovering Boat sandboxes…"
         } else if !query.is_empty() {
-            "No boats match the filter."
+            "No hosts match the filter."
         } else {
             "No boats to show."
         };
@@ -209,6 +237,59 @@ fn draw_table(f: &mut Frame, body: Rect, app: &App, state: &State, theme: &Palet
         );
     }
     scroll
+}
+
+struct ListColumns {
+    columns: Vec<usize>,
+    widths: [u16; HEADERS.len()],
+    name_width: usize,
+    full: bool,
+}
+
+fn list_columns(body_width: usize, hide_memory: bool) -> ListColumns {
+    let gap = usize::from(GAP);
+    let full_size = FULL_WIDTHS.map(usize::from).into_iter().sum::<usize>() + gap * NAME;
+    let hidden_width = if hide_memory {
+        usize::from(FULL_WIDTHS[MEMORY]) + gap
+    } else {
+        0
+    };
+    let full = body_width >= full_size - hidden_width;
+    let widths = if full { FULL_WIDTHS } else { COMPACT_WIDTHS };
+    let mut fitting_widths = widths.map(usize::from);
+    let mut fitting_budget = body_width;
+    if hide_memory {
+        // fit_row counts a separator even for a zero-width column.
+        // Credit it back before fitting, then omit the empty column.
+        fitting_widths[MEMORY] = 0;
+        fitting_budget += gap;
+    }
+    let columns: Vec<_> = fit_row(
+        &fitting_widths,
+        gap,
+        fitting_budget,
+        if hide_memory {
+            &[4, 1, 2, 0, 6, 5]
+        } else {
+            &[4, 1, MEMORY, 2, 0, 6, 5]
+        },
+    )
+    .into_iter()
+    .filter(|&index| !hide_memory || index != MEMORY)
+    .collect();
+    let name_width = body_width.saturating_sub(
+        columns
+            .iter()
+            .filter(|&&i| i != NAME)
+            .map(|&i| usize::from(widths[i] + GAP))
+            .sum(),
+    );
+    ListColumns {
+        columns,
+        widths,
+        name_width,
+        full,
+    }
 }
 
 fn matches(boat: &Sandbox, query: &str) -> bool {

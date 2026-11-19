@@ -270,8 +270,7 @@ where
     B::Error: std::error::Error + Send + Sync + 'static,
     S: tokio_stream::Stream<Item = std::io::Result<Event>> + Unpin,
 {
-    let servers = fleet.initial();
-    let mut boat_feed = matches!(fleet, super::Fleet::Boat).then(super::boat::Feed::start);
+    let mut boat_feed = matches!(fleet, super::Fleet::Boat(_)).then(super::boat::Feed::start);
     let boat_view_path = config_path.with_file_name("boat-view");
     // First, before the config read, the state read and the vault probe: a stop
     // that lands in that window is a stop with no handler to catch it and no
@@ -292,13 +291,16 @@ where
     #[cfg(not(unix))]
     let mut signals: Option<()> = None;
 
-    let mut app = if boat_feed.is_some() {
-        super::boot::boot_boat_app(&servers, super::boat::View::load(&boat_view_path))
-    } else {
-        boot_app(&servers, &config_path, initial_theme.as_deref())
+    let mut app = match fleet {
+        super::Fleet::Boat(servers) => {
+            super::boot::boot_boat_app(servers, super::boat::View::load(&boat_view_path))
+        }
+        super::Fleet::Configured(servers) => {
+            boot_app(&servers, &config_path, initial_theme.as_deref())
+        }
     };
     let (tx, mut rx) = mpsc::channel::<Msg>(512);
-    let mut tasks = Tasks::new(servers.len());
+    let mut tasks = Tasks::new(app.panels.len());
 
     let dims_rx = Arc::new(dims_tx.subscribe());
     let mut dims = AgentDims::new(dims_tx, &terminal.size(), app.visible_panes());

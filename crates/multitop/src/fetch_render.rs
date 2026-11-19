@@ -188,6 +188,16 @@ pub fn render_fetch(
     max_rows: usize,
     pal: &PaletteView,
 ) -> Vec<String> {
+    render_fetch_with_memory(snap, cols, max_rows, pal, true)
+}
+
+pub(crate) fn render_fetch_with_memory(
+    snap: &FetchSnapshot,
+    cols: usize,
+    max_rows: usize,
+    pal: &PaletteView,
+    show_memory: bool,
+) -> Vec<String> {
     let mut out = Vec::with_capacity(crate::consts::FETCH_LINE_CAPACITY);
     out.push(center_header(&snap.user_host, cols, pal));
 
@@ -209,7 +219,11 @@ pub fn render_fetch(
         ("Palette", &colors_row),
     ];
 
-    let max_val_len = details[..7]
+    let details: Vec<_> = details
+        .into_iter()
+        .filter(|(label, _)| show_memory || *label != "Memory")
+        .collect();
+    let max_val_len = details[..details.len() - 1]
         .iter()
         .map(|(_, v)| v.chars().count())
         .max()

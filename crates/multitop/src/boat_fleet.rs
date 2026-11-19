@@ -1,5 +1,6 @@
 //! Session-local inventory, visibility and live samples for the Boat dashboard.
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
@@ -10,11 +11,13 @@ use multitop_agent::{proto::Payload, render::Snapshot};
 
 #[derive(Default)]
 pub struct State {
+    pub(crate) ssh_servers: Vec<Server>,
     pub inventory: Vec<Sandbox>,
     pub visible: BTreeSet<String>,
     pub samples: BTreeMap<String, Instant>,
     pub(crate) usage: BTreeMap<String, Usage>,
     pub auto_clear: bool,
+    pub(crate) display: Display,
     pub list_open: bool,
     pub list_scroll: usize,
     pub discovery_notice: Option<String>,
@@ -22,7 +25,50 @@ pub struct State {
     dismissed: BTreeSet<String>,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum StatsPanel {
+    Cpu,
+    Network,
+    Processes,
+    Disks,
+}
+
+#[derive(Default)]
+pub(crate) struct Display {
+    pub(crate) hide_memory: bool,
+    hidden_panels: u8,
+    pub(crate) stats_text: Option<multitop_agent::surface::Rgb>,
+}
+
+impl Display {
+    pub(crate) const fn hidden(&self, panel: StatsPanel) -> bool {
+        self.hidden_panels & (1 << panel as u8) != 0
+    }
+
+    pub(crate) fn toggle(&mut self, panel: StatsPanel) {
+        self.hidden_panels ^= 1 << panel as u8;
+    }
+}
+
+/// Stable across inventory refreshes and Boat state changes.
+pub(crate) fn panel_key(server: &Server) -> Cow<'_, str> {
+    if let Some(id) = identity(&server.host) {
+        Cow::Borrowed(id)
+    } else if crate::ssh::is_local(server) {
+        Cow::Borrowed("localhost")
+    } else {
+        Cow::Owned(format!("ssh:{}:{}", server.target(), server.port))
+    }
+}
+
 impl State {
+    pub(crate) fn new(ssh_servers: Vec<Server>) -> Self {
+        Self {
+            ssh_servers,
+            ..Self::default()
+        }
+    }
+
     pub fn select(&mut self, inventory: Vec<Sandbox>) -> Vec<Server> {
         self.inventory = inventory;
         self.discovered = true;
@@ -40,6 +86,10 @@ impl State {
         });
         self.samples.retain(|id, _| {
             id == "localhost"
+                || self
+                    .ssh_servers
+                    .iter()
+                    .any(|server| panel_key(server) == id.as_str())
                 || self
                     .inventory
                     .iter()
@@ -81,6 +131,7 @@ impl State {
 
     pub fn servers(&self) -> Vec<Server> {
         std::iter::once(crate::boat::local_server())
+            .chain(self.ssh_servers.iter().cloned())
             .chain(
                 self.list_rows()
                     .filter(|boat| self.visible.contains(&boat.id))
@@ -90,12 +141,10 @@ impl State {
     }
 
     pub(crate) fn fresh_sample<'a>(&self, panel: &'a Panel) -> Option<&'a Snapshot> {
-        let host = &panel.server.host;
-        let id = identity(host).unwrap_or(host);
-        if offline(host)
+        if offline(&panel.server.host)
             || self
                 .samples
-                .get(id)
+                .get(panel_key(&panel.server).as_ref())
                 .is_none_or(|at| at.elapsed() > POLL_INTERVAL)
         {
             return None;
@@ -153,5 +202,10 @@ pub fn summary(app: &crate::app::App) -> String {
     } else {
         format!(" | {hidden} stopped hidden")
     };
-    format!("{view}  c clear  C auto {auto}  G graphs  s stats | {running} up | Fleet CPU {cpu} ({reporting}/{running} reporting){hidden} | / filter  q quit")
+    let memory = if state.display.hide_memory {
+        "m show mem"
+    } else {
+        "m hide mem"
+    };
+    format!("{view}  {memory}  t theme  c clear  C auto {auto}  G graphs  s stats | {running} up | Fleet CPU {cpu} ({reporting}/{running} reporting){hidden} | / filter  q quit")
 }

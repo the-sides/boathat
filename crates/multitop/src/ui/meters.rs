@@ -4,7 +4,7 @@ use multitop_agent::{palette_view::PaletteView, surface::Rgb};
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
-    text::{Line, Span},
+    text::Line,
     widgets::{Block, BorderType, Paragraph},
     Frame,
 };
@@ -30,24 +30,6 @@ pub fn block(title: impl Into<Line<'static>>, pal: &PaletteView) -> Block<'stati
         .border_style(Style::default().fg(super::ink(pal.page.border)))
         .title(title)
         .title_style(style(pal.primary()).add_modifier(Modifier::BOLD))
-}
-
-pub fn meter(pct: f64, width: u16, pal: &PaletteView) -> Line<'static> {
-    let cells = usize::from(width);
-    let filled = multitop_agent::conv::whole_usize(
-        (pct.clamp(0.0, PERCENT) / PERCENT * f64::from(width)).round(),
-    );
-    Line::from(
-        (0..cells)
-            .map(|i| {
-                if i < filled {
-                    Span::styled("▮", style(crate::graphs::height_ink(pal, i, cells)))
-                } else {
-                    Span::styled("░", style(pal.muted()))
-                }
-            })
-            .collect::<Vec<_>>(),
-    )
 }
 
 pub fn plot(f: &mut Frame, area: Rect, samples: &[f64], pal: &PaletteView) {

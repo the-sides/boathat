@@ -71,6 +71,9 @@ pub struct History {
     pub cpu: Series,
     /// Memory in use as a percent of total, 0..=100.
     pub mem: Series,
+    /// Swap in use as a percent of allocated swap, when reported.
+    #[serde(default)]
+    pub swap: Series,
     /// Disk in use as a percent of total, 0..=100.
     #[serde(default)]
     pub disk: Series,
@@ -93,6 +96,9 @@ impl History {
         // `Usage` computes its own percent; recomputing it here would be a
         // second definition of "how full is memory" to keep in step by hand.
         self.mem.push(snap.mem.pct);
+        if let Some(swap) = snap.swap {
+            self.swap.push(swap.pct);
+        }
         self.disk.push(snap.disk.pct);
         self.rx.push(snap.rx_rate);
         self.tx.push(snap.tx_rate);

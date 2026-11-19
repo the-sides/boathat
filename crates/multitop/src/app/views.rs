@@ -310,8 +310,16 @@ impl App {
             p.mode = Mode::Fetch;
             // Show cached data immediately if we have it; the spawned task refreshes.
             if let Some(snap) = &p.last_fetch {
-                let lines =
-                    crate::fetch_render::render_fetch(snap, dims.0 as usize, dims.1 as usize, pal);
+                let lines = crate::fetch_render::render_fetch_with_memory(
+                    snap,
+                    dims.0 as usize,
+                    dims.1 as usize,
+                    pal,
+                    !self
+                        .boat
+                        .as_ref()
+                        .is_some_and(|fleet| fleet.display.hide_memory),
+                );
                 p.show_frame(lines);
             } else {
                 p.show_body(std::iter::once(format!(

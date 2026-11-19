@@ -29,14 +29,14 @@ pub use entry::{run, run_fleet};
 /// The source of the dashboard's host list.
 pub enum Fleet {
     Configured(Vec<crate::config::Server>),
-    Boat,
+    Boat(Vec<crate::config::Server>),
 }
 
 impl Fleet {
-    fn initial(&self) -> Vec<crate::config::Server> {
+    fn initial_len(&self) -> usize {
         match self {
-            Self::Configured(servers) => servers.clone(),
-            Self::Boat => vec![crate::boat::local_server()],
+            Self::Configured(servers) => servers.len(),
+            Self::Boat(servers) => 1 + servers.len(),
         }
     }
 }

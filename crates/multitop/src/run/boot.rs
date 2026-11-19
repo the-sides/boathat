@@ -6,9 +6,9 @@ use crate::app::App;
 use crate::config::Server;
 
 /// Restore the Boat view independently of the configured-host dashboard.
-pub(super) fn boot_boat_app(servers: &[Server], view: super::boat::View) -> App {
-    let mut app = App::new(servers.to_vec());
-    let mut state = crate::boat_fleet::State::default();
+pub(super) fn boot_boat_app(servers: Vec<Server>, view: super::boat::View) -> App {
+    let mut state = crate::boat_fleet::State::new(servers);
+    let mut app = App::new(state.servers());
     state.list_open = view == super::boat::View::List;
     app.boat = Some(state);
     for panel in &mut app.panels {
@@ -197,10 +197,7 @@ mod tests {
 
     #[test]
     fn boat_boot_has_no_persistent_config_or_vault() {
-        let app = super::boot_boat_app(
-            &[crate::boat::local_server()],
-            crate::run::boat::View::Graphs,
-        );
+        let app = super::boot_boat_app(Vec::new(), crate::run::boat::View::Graphs);
         assert!(!app.boat.as_ref().unwrap().list_open);
         assert_eq!(app.panels[0].mode, crate::panel::Mode::Graphs);
         assert!(app.config_path.is_none());

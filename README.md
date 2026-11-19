@@ -13,7 +13,8 @@ cd boathat
 
 Requires Rust, the build backend's tools, and an authenticated Boat CLI.
 No GitHub App is required. Inventory refreshes every 15 seconds; metrics stream
-over SSH. Running boats and the local machine get live tiles. Boathat restores
+over SSH. Running boats, the local machine and [configured SSH hosts](docs/boat.md#ssh-hosts)
+get live tiles. Boathat restores
 the last List, Graphs or Stats view and starts in Graphs on first launch.
 Press `l` for the fleet list, with stopped boats at the bottom and CPU and
 memory on the same row.

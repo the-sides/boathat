@@ -67,6 +67,16 @@ pub fn handle_key(
     if filter_keys(key, app) {
         return;
     }
+    if stats_panel_key(key, app) {
+        return;
+    }
+    if key.code == KeyCode::Char('m') && key.modifiers.is_empty() {
+        if let Some(fleet) = &mut app.boat {
+            fleet.display.hide_memory = !fleet.display.hide_memory;
+            app.rerender_all(dims);
+            return;
+        }
+    }
     if super::boat::keys(key, app) {
         return;
     }
@@ -158,6 +168,32 @@ pub fn handle_key(
     }
 
     execute_cmds(cmds, app, dims, tx, tasks);
+}
+
+fn stats_panel_key(key: KeyEvent, app: &mut App) -> bool {
+    if !key.modifiers.is_empty()
+        || super::boat::View::current(app) != Some(super::boat::View::Stats)
+    {
+        return false;
+    }
+    let Some(fleet) = &mut app.boat else {
+        return false;
+    };
+    let display = &mut fleet.display;
+    use crate::boat_fleet::StatsPanel;
+    let panel = match key.code {
+        KeyCode::Char('1') => StatsPanel::Cpu,
+        KeyCode::Char('2') => {
+            display.hide_memory = !display.hide_memory;
+            return true;
+        }
+        KeyCode::Char('3') => StatsPanel::Network,
+        KeyCode::Char('4') => StatsPanel::Processes,
+        KeyCode::Char('d') => StatsPanel::Disks,
+        _ => return false,
+    };
+    display.toggle(panel);
+    true
 }
 
 /// Help and the command palette: the overlays own every key while up.

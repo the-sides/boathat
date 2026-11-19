@@ -19,6 +19,25 @@ supports Docker. No GitHub App, separate API key, or metrics service is needed.
 the standard Boat installation or `boat` on PATH. `BOAT_ORG` selects the Boat
 organization scope, as for the regular CLI.
 
+## SSH hosts
+
+To monitor another machine alongside the local tile and Boat sandboxes, add a
+`[[servers]]` entry in `~/.config/multitop/boat.toml` or pass `boathat --config <path>`.
+Boathat reads this file at startup. The file is optional.
+
+```toml
+[[servers]]
+host = "homebox"
+user = "monitor"
+name = "Home box"
+```
+
+The connection uses ordinary SSH and your existing SSH keys and settings.
+`port` defaults to 22. Boathat uses the connection fields and display name for
+monitoring. Press `D` from the grid for Docker stats if the SSH user can read
+the Docker socket. Configured hosts stay in the grid and show up as SSH rows
+in the list. Lease, size and cost apply to Boat sandboxes.
+
 ## Fleet and lifecycle
 
 - Discovery reads `boat list --all --json` every 15 seconds after the preceding
@@ -52,18 +71,24 @@ A permanent **This Mac** tile shows this machine's CPU, memory, disk, network,
 processes and swap, using the native collector directly without SSH. It stays
 visible when no boats are running. The fleet CPU footer counts boats only.
 
-Tiles use rounded btop-inspired frames, an aggregate CPU meter and per-core
-meters, a CPU history graph, memory history, disk/swap meters and a process
-table. The grid automatically adds columns as the terminal widens, preferring
-layouts that fit the full dashboard. It balances tile width and height, and
-the last row fills its available width. NET is a compact right-aligned readout. Short panes use fixed compact
-metric rows and give the remaining space to processes. Metric views never
+The full stats tile uses btop's Matcha Dark Sea palette, with a full-width CPU
+graph and core readings above side-by-side memory and process panels. The
+memory panel charts RAM and swap. The network and disk panels report traffic
+and root disk usage. The grid adds columns as space allows. Short panes use
+compact metric rows and give the remaining space to processes. Metric views never
 scroll: CPU and memory graphs resize to each tile, including after a resize or
 fleet change. Only process lists scroll; wheel/down moves further down the list,
 and Home/End select its beginning/end. Titles show the reported **SIZE** (`default`, `large`, `xlarge`, etc.) and
 **SWAP used/total**. Missing size metadata is marked `unknown`. On Linux, total is configured swap
 capacity. On macOS, it is the currently allocated swap space, which can grow;
 it is not a hard maximum. Unavailable readings are marked explicitly.
+
+Press `m` to show or hide host memory and swap across stats, graphs, the fleet
+list, and Fetch. `t` cycles themes. In the stats grid, use `:text #RRGGBB` to set
+the text color and `:text default` to restore Matcha Dark Sea's text color.
+In Stats, `1` toggles CPU, `2` toggles memory and swap, `3` toggles network,
+`4` toggles processes, and `d` toggles disks. Use `D` to open Docker from
+Stats. These display controls apply to the current session.
 
 On first launch, Boathat opens in graph view, which shows CPU and memory.
 Later launches restore the last List, Graphs or Stats view. Graph dots
@@ -89,12 +114,11 @@ sandbox. Usage refreshes once per minute while the list is open. Stopped boats
 and unavailable readings show a dash. Long names wrap.
 
 Use `G` for graphs, `s` for stats, `z` or Enter to focus a tile, `Esc` to go
-back, `/` to filter by boat name or ID, and `q` to quit.
+back, `/` to filter by name, host or Boat ID, and `q` to quit.
 
 ## Scope
 
-Boat mode is the interactive dashboard; it cannot be combined with static host,
-local, headless-server or Ops-poller modes. Selection, themes and graph history
-stay in the current session.
-Boat discovery owns its host list, so static-host Settings are unavailable.
+Boat mode is the interactive dashboard. It has its own SSH host file and is
+separate from the standalone host dashboard, headless server and Ops poller.
+Selection, themes and graph history stay in the current session.
 Boat billing and snapshot metrics are not collected by the SSH system monitor.

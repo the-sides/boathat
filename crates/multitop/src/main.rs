@@ -18,7 +18,7 @@ USAGE:
 OPTIONS:
     -c, --config <PATH>    Config file (default: ~/.config/multitop/config.toml)
     -r, --remote <HOSTS>   Override config with comma-separated remote hosts/IPs
-        --boat             Discover Boat sandboxes every 15s using your Boat login
+        --boat             Discover Boat sandboxes and monitor SSH hosts from boat.toml
         --local            Include local machine (localhost) in server list
         --local-only       Monitor local machine only (no config or SSH required)
         --serve [<ADDR>]   Run as headless HTTP companion (default :8080)
@@ -208,7 +208,29 @@ fn resolve_servers(
     config_path: &Path,
 ) -> Result<(Vec<config::Server>, Option<String>), String> {
     if opts.boat {
-        return Ok((vec![multitop::boat::local_server()], None));
+        let config = match std::fs::read_to_string(config_path) {
+            Ok(text) => {
+                config::parse(&text).map_err(|e| format!("{}: {e}", config_path.display()))?
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok((Vec::new(), None)),
+            Err(e) => return Err(format!("{}: {e}", config_path.display())),
+        };
+        // Boat mode uses configured endpoints for monitoring only.
+        let servers = config
+            .servers
+            .into_iter()
+            .filter(|server| {
+                !ssh::is_local(server) && multitop::boat::identity(&server.host).is_none()
+            })
+            .map(|server| config::Server {
+                host: server.host,
+                name: server.name,
+                port: server.port,
+                user: server.user,
+                ..config::Server::default()
+            })
+            .collect();
+        return Ok((servers, None));
     }
     let local_server = config::Server {
         host: "localhost".into(),
@@ -364,7 +386,7 @@ fn main() -> ExitCode {
 
     let code = match runtime.block_on(run::run_fleet(
         if opts.boat {
-            run::Fleet::Boat
+            run::Fleet::Boat(servers)
         } else {
             run::Fleet::Configured(servers)
         },
@@ -506,8 +528,33 @@ mod tests {
             return Err("expected Boat mode".into());
         };
         assert!(opts.boat);
-        let (servers, _) = resolve_servers(&opts, Path::new("/not/a/config"))?;
-        assert_eq!(servers, [multitop::boat::local_server()]);
+        let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
+        let path = dir.path().join("boat.toml");
+        assert!(resolve_servers(&opts, &path)?.0.is_empty());
+        std::fs::write(
+            &path,
+            r#"
+[[servers]]
+host = "homebox"
+user = "monitor"
+port = 2222
+name = "Home"
+upgrade_cmd = "sudo reboot"
+command = "uptime"
+"#,
+        )
+        .map_err(|e| e.to_string())?;
+        let (servers, _) = resolve_servers(&opts, &path)?;
+        assert_eq!(
+            servers,
+            [config::Server {
+                host: "homebox".into(),
+                user: "monitor".into(),
+                port: 2222,
+                name: Some("Home".into()),
+                ..config::Server::default()
+            }]
+        );
         for flags in [
             vec!["--boat", "--local"],
             vec!["--boat", "--serve"],

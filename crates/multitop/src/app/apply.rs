@@ -91,8 +91,10 @@ impl App {
         }
         if matches!(payload, multitop_agent::proto::Payload::Monitor(_)) {
             if let (Some(state), Some(panel)) = (&mut self.boat, self.panels.get(panel)) {
-                let id = crate::boat::identity(&panel.server.host).unwrap_or(&panel.server.host);
-                state.samples.insert(id.into(), std::time::Instant::now());
+                let key = crate::boat_fleet::panel_key(&panel.server);
+                state
+                    .samples
+                    .insert(key.into_owned(), std::time::Instant::now());
             }
         }
         // The palette is cloned to an Rc BEFORE the mutable borrow of the panel,
@@ -167,11 +169,15 @@ impl App {
                 p.last_fetch = Some(snap.clone());
                 let shown = p.mode == Mode::Fetch && accepts;
                 if shown {
-                    let lines = crate::fetch_render::render_fetch(
+                    let lines = crate::fetch_render::render_fetch_with_memory(
                         snap,
                         dims.0 as usize,
                         dims.1 as usize,
                         pal,
+                        !self
+                            .boat
+                            .as_ref()
+                            .is_some_and(|fleet| fleet.display.hide_memory),
                     );
                     p.show_frame(lines);
                 }
@@ -204,8 +210,9 @@ impl App {
             // These are connection/status frames, not live measurements.
             // Invalidate freshness immediately and reserve the title row so a
             // one-line error cannot be overwritten by the machine's name.
-            let id = crate::boat::identity(&p.server.host).unwrap_or(&p.server.host);
-            fleet.samples.remove(id);
+            fleet
+                .samples
+                .remove(crate::boat_fleet::panel_key(&p.server).as_ref());
             if lines.first().is_some_and(|line| !line.is_empty()) {
                 lines.insert(0, String::new());
             }

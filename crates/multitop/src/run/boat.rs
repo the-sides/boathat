@@ -4,6 +4,7 @@ use std::path::Path;
 
 use crate::app::App;
 use crate::boat::{Sandbox, Usage, USAGE_INTERVAL};
+use crate::boat_fleet::panel_key;
 use crate::config::Server;
 use crate::panel::{Mode, Panel};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent, MouseEventKind};
@@ -226,21 +227,18 @@ fn rebuild_panels(app: &mut App, servers: Vec<Server>) -> bool {
     if app.panels.iter().map(|p| &p.server).eq(servers.iter()) {
         return false;
     }
-    // User-started upgrades retain their task ownership until complete. Boat
-    // inventories never configure upgrades, but Settings can add one.
+    // User-started upgrades retain their task ownership until complete.
     if app.upgrades_in_flight() {
         return false;
     }
     let selected = app
         .panels
         .get(app.selected_panel)
-        .and_then(|p| crate::boat::identity(&p.server.host))
-        .map(str::to_owned);
+        .map(|p| panel_key(&p.server).into_owned());
     let focused = app
         .focused_panel
         .and_then(|i| app.panels.get(i))
-        .and_then(|p| crate::boat::identity(&p.server.host))
-        .map(str::to_owned);
+        .map(|p| panel_key(&p.server).into_owned());
     app.panels_epoch += 1;
     let generation = app.panels.iter().map(|p| p.gen).max().unwrap_or(0) + 1;
     // View switches apply to the fleet. The permanent local tile keeps that
@@ -257,9 +255,8 @@ fn rebuild_panels(app: &mut App, servers: Vec<Server>) -> bool {
         .map_or(Mode::Monitor, |p| p.mode.for_startup());
     let mut old = std::mem::take(&mut app.panels);
     for server in servers {
-        let previous = old.iter().position(|p| {
-            crate::boat::identity(&p.server.host) == crate::boat::identity(&server.host)
-        });
+        let key = panel_key(&server);
+        let previous = old.iter().position(|p| panel_key(&p.server) == key);
         let mut panel = previous.map_or_else(|| Panel::new(server.clone()), |i| old.remove(i));
         let changed = panel.server.host != server.host;
         panel.server = server;
@@ -282,13 +279,9 @@ fn rebuild_panels(app: &mut App, servers: Vec<Server>) -> bool {
         }
         app.panels.push(panel);
     }
-    let position = |id: Option<&str>| {
-        app.panels
-            .iter()
-            .position(|p| crate::boat::identity(&p.server.host) == id)
-    };
-    app.selected_panel = position(selected.as_deref()).unwrap_or(0);
-    app.focused_panel = focused.as_deref().and_then(|id| position(Some(id)));
+    let position = |key: &str| app.panels.iter().position(|p| panel_key(&p.server) == key);
+    app.selected_panel = selected.as_deref().and_then(position).unwrap_or(0);
+    app.focused_panel = focused.as_deref().and_then(position);
     true
 }
 
@@ -407,18 +400,14 @@ mod tests {
         assert_eq!(View::load(&path), View::Graphs);
         for view in [View::List, View::Stats, View::Graphs] {
             view.save(&path).unwrap();
-            let app = super::super::boot::boot_boat_app(
-                &[crate::boat::local_server()],
-                View::load(&path),
-            );
+            let app = super::super::boot::boot_boat_app(Vec::new(), View::load(&path));
             assert_eq!(View::current(&app), Some(view));
         }
     }
 
     #[test]
     fn discovery_keeps_selection_and_scrollback_when_another_boat_is_deleted() {
-        let mut app =
-            super::super::boot::boot_boat_app(&[crate::boat::local_server()], View::Graphs);
+        let mut app = super::super::boot::boot_boat_app(Vec::new(), View::Graphs);
         assert!(reconcile(
             &mut app,
             Ok(fleet(&[("bx_a", "idle"), ("bx_b", "idle")]))
@@ -438,6 +427,46 @@ mod tests {
             epoch: old_epoch,
             lines: vec!["old boat".into()],
         }));
+    }
+
+    #[test]
+    fn configured_ssh_host_keeps_live_metrics_and_selection_across_inventory_changes() {
+        let server = Server {
+            host: "homebox".into(),
+            user: "monitor".into(),
+            name: Some("Home box".into()),
+            port: 22,
+            ..Server::default()
+        };
+        let mut app = super::super::boot::boot_boat_app(vec![server.clone()], View::Graphs);
+        assert_eq!(app.panels[1].server, server);
+        app.selected_panel = 1;
+        app.focused_panel = Some(1);
+        app.apply(crate::app::Msg::Packet {
+            panel: 1,
+            epoch: app.panels_epoch,
+            gen: app.panels[1].gen,
+            dims: (100, 30),
+            payload: multitop_agent::proto::Payload::Monitor(multitop_agent::render::Snapshot {
+                cpu_pct: 25.0,
+                ..multitop_agent::render::Snapshot::default()
+            }),
+        });
+        assert!(reconcile(&mut app, Ok(fleet(&[("bx_a", "idle")]))));
+        assert_eq!(app.selected_panel, 1);
+        assert_eq!(app.focused_panel, Some(1));
+        assert_eq!(app.panels[1].server, server);
+        let state = app.boat.as_mut().unwrap();
+        assert!(state.fresh_sample(&app.panels[1]).is_some());
+        state.list_open = true;
+        app.filter_query = "homebox".into();
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 30)).unwrap();
+        let frame = terminal.draw(|f| crate::ui::draw(f, &mut app)).unwrap();
+        let buffer = frame.buffer.content();
+        let text: String = buffer.iter().map(ratatui::buffer::Cell::symbol).collect();
+        assert!(text.contains("Home box") && text.contains("25%"));
+        assert!(!text.contains("bx_a"));
     }
 
     #[test]
@@ -487,8 +516,11 @@ mod tests {
                 .flat_map(|y| (tile.x..tile.right()).map(move |x| (x, y)))
                 .map(|point| buffer[point].symbol())
                 .collect();
-            assert!(text.contains("CPU") && text.contains("MEM"));
-            assert_eq!(text.contains("processes"), mode == Mode::Monitor);
+            if mode == Mode::Monitor {
+                assert!(text.contains("¹cpu") && text.contains("²mem") && text.contains("⁴proc"));
+            } else {
+                assert!(text.contains("CPU") && text.contains("MEM") && !text.contains("⁴proc"));
+            }
         }
     }
 
@@ -511,8 +543,7 @@ mod tests {
     #[test]
     fn unchanged_inventory_does_not_restart_monitors_and_failures_keep_the_fleet() {
         let initial = fleet(&[("bx_a", "idle")]);
-        let mut app =
-            super::super::boot::boot_boat_app(&[crate::boat::local_server()], View::Graphs);
+        let mut app = super::super::boot::boot_boat_app(Vec::new(), View::Graphs);
         assert!(reconcile(&mut app, Ok(initial)));
         assert!(!reconcile(&mut app, Ok(fleet(&[("bx_a", "idle")]))));
         assert!(!reconcile(&mut app, Err("offline".into())));
@@ -524,8 +555,7 @@ mod tests {
 
     #[test]
     fn stopping_and_resuming_invalidates_old_samples_without_losing_identity() {
-        let mut app =
-            super::super::boot::boot_boat_app(&[crate::boat::local_server()], View::Graphs);
+        let mut app = super::super::boot::boot_boat_app(Vec::new(), View::Graphs);
         assert!(reconcile(&mut app, Ok(fleet(&[("bx_a", "idle")]))));
         app.panels[1].last_frame = Some(vec!["stale CPU".into()]);
         assert!(reconcile(&mut app, Ok(fleet(&[("bx_a", "stopped")]))));
@@ -568,8 +598,7 @@ mod tests {
 
     #[test]
     fn clear_keys_handle_current_and_future_stops_and_allow_resumes() {
-        let mut app =
-            super::super::boot::boot_boat_app(&[crate::boat::local_server()], View::Graphs);
+        let mut app = super::super::boot::boot_boat_app(Vec::new(), View::Graphs);
         let (tx, _) = mpsc::channel(1);
         let (_, dims) = tokio::sync::watch::channel((120, 40));
         let dims = std::sync::Arc::new(dims);

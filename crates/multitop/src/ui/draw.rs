@@ -198,32 +198,22 @@ fn banner_row(
         })
         .unwrap_or_else(|| panel.server.host.clone());
     let host_name = panel.server.name.as_ref().unwrap_or(&host_name);
-    let swap_title = app.boat.as_ref().and_then(|state| {
-        let id = crate::boat::identity(&panel.server.host).unwrap_or(&panel.server.host);
-        if crate::boat::offline(&panel.server.host)
-            || state
-                .samples
-                .get(id)
-                .is_none_or(|at| at.elapsed() > crate::boat::POLL_INTERVAL)
-        {
-            return None;
-        }
-        match &panel.last_monitor {
-            Some(multitop_agent::proto::Payload::Monitor(reading)) => {
-                Some(reading.swap.map_or_else(
-                    || format!("{host_name} | SWAP unavailable"),
-                    |usage| {
-                        format!(
-                            "{host_name} | SWAP {}/{}",
-                            multitop_agent::fmt::fmt_size(usage.used),
-                            multitop_agent::fmt::fmt_size(usage.total)
-                        )
-                    },
-                ))
-            }
-            _ => None,
-        }
-    });
+    let swap_title = app
+        .boat
+        .as_ref()
+        .and_then(|state| state.fresh_sample(panel))
+        .map(|reading| {
+            reading.swap.map_or_else(
+                || format!("{host_name} | SWAP unavailable"),
+                |usage| {
+                    format!(
+                        "{host_name} | SWAP {}/{}",
+                        multitop_agent::fmt::fmt_size(usage.used),
+                        multitop_agent::fmt::fmt_size(usage.total)
+                    )
+                },
+            )
+        });
     let host_name = swap_title.as_deref().unwrap_or(host_name);
 
     // Row 0 is composed here, once, from everything that belongs on it:

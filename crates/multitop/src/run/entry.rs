@@ -43,7 +43,6 @@ pub async fn run_fleet(
     config_path: PathBuf,
     initial_theme: Option<String>,
 ) -> std::io::Result<()> {
-    let servers = fleet.initial();
     let mut terminal = terminal::take_terminal()?;
     // Restoration is a guard rather than trailing statements, so it cannot be
     // skipped. Both of the calls that used to sit here propagated with `?`: a
@@ -57,7 +56,7 @@ pub async fn run_fleet(
     // and would not run this `Drop`.
     let restore = TerminalGuard;
     terminal::enter_terminal_modes(&mut std::io::stdout())?;
-    let (dims_tx, _) = watch::channel(ui::agent_dims(terminal.size()?, servers.len()));
+    let (dims_tx, _) = watch::channel(ui::agent_dims(terminal.size()?, fleet.initial_len()));
     let mut events = EventStream::new();
     let outcome = event_loop_fleet(
         &mut terminal,

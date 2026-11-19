@@ -164,7 +164,14 @@ pub fn draw_command_palette(f: &mut Frame, app: &App) {
     let shown: Vec<&str> = all
         .iter()
         .copied()
-        .filter(|c| filter.is_empty() || c.contains(&filter))
+        .chain(
+            app.boat
+                .is_some()
+                .then_some(["text #RRGGBB", "text default"])
+                .into_iter()
+                .flatten(),
+        )
+        .filter(|c| filter.is_empty() || c.to_ascii_lowercase().contains(&filter))
         .take(8)
         .collect();
 
@@ -248,6 +255,12 @@ pub(crate) fn draw_boat_help(f: &mut Frame, theme: &PaletteView) {
             ("l", "switch between list and grid"),
             ("G", "CPU and memory graphs"),
             ("s", "stats grid"),
+            ("1 / 2", "Stats: toggle CPU / memory"),
+            ("3 / 4", "Stats: toggle network / processes"),
+            ("d / D", "Stats: toggle disks / open Docker"),
+            ("m", "show or hide host memory and swap"),
+            ("t", "cycle themes"),
+            (":", "commands, including text color"),
             ("c", "dismiss stopped boxes from the dashboard"),
             ("C", "toggle automatic dismissal"),
             ("/", "filter boats"),
