@@ -154,10 +154,10 @@ dependencies {
     implementation("com.google.zxing:core:3.5.4")
     // A3 push (owner ruling OW.26, "both, ntfy first"). The UnifiedPush
     // connector 3.3.5 (newest, 2026) registers with the phone's distributor and
-    // decrypts RFC 8291 Web Push itself; Firebase Messaging 26.0.1 (newest) is
+    // decrypts RFC 8291 Web Push itself; Firebase Messaging 26.0.2 (newest) is
     // the fallback route when the phone has no distributor.
     implementation("org.unifiedpush.android:connector:3.3.5")
-    implementation("com.google.firebase:firebase-messaging:26.0.1")
+    implementation("com.google.firebase:firebase-messaging:26.0.2")
 
     testImplementation("org.junit.jupiter:junit-jupiter:6.1.3")
     // org.json is the platform's on a phone; android.jar's copy is stubs on the
@@ -168,7 +168,7 @@ dependencies {
     // JUnit 4's; the vintage engine runs them on the same JUnit Platform.
     testImplementation(platform("androidx.compose:compose-bom:2026.09.00"))
     testImplementation("androidx.compose.ui:ui-test-junit4")
-    testImplementation("org.robolectric:robolectric:4.17")
+    testImplementation("org.robolectric:robolectric:4.18")
     testImplementation("junit:junit:4.13.2")
     // ui-test-junit4 pulls espresso-core 3.5.0, whose input injection calls
     // InputManager.getInstance(), gone from the platform Robolectric runs.

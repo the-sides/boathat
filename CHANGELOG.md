@@ -7,6 +7,51 @@ This file starts at v0.47.0 — earlier history is in git (`git log`), and the
 per-defect record is `docs/detection-record.md`, which is the more useful
 document for anything before this point.
 
+## Unreleased
+
+## v0.69.9 — Move docker agent cargo target to named volume and pin base image (old_phones penumbra out of scope: vendored interactive tool with no cargo target) _(2026-11-13)_
+
+### Fixed — `build.sh` docker backend keeps its cargo target in a named volume (`EST.HOSTMOUNTTARGET`)
+- `build.sh`'s docker backend mounted `$PWD:/src` read-write with `CARGO_TARGET_DIR=/src/target/docker` on moving tag `rust:alpine`. The container now mounts the repo read-only (`/src:ro`), builds with a pinned compiler/alpine release (`rust:1.100.0-alpine3.23`), keeps the cargo target and registry in named volumes (`multitop-agent-target`, `multitop-agent-cargo`), and copies only the built agent binary out through `/out`. Pinned by `tests/test_build_docker.py`.
+
+## v0.69.8 — A release kit so goh ship tags, installs and records monitor releases _(2026-11-13)_
+
+### Added — a release kit for `goh ship` (MON.SHIPKIT)
+- monitor tagged releases and named no `GOH_SHIP_RELEASE`, so `goh ship` refused it and agents fell
+  back to a bare `git push`, which tags nothing and installs nothing. `tools/ship_release.sh` is the
+  kit: it writes the version into `[workspace.package]`, `Cargo.lock` and `fuzz/Cargo.lock` (the
+  three crates that follow it; the vault keeps its own), cuts the stanza from Unreleased, commits,
+  then runs `./release.sh`, which installs before its one atomic push of main and the tag.
+  `.gatesrc` declares it with `GOH_SHIP_CHANGELOG=cut`, `GOH_SHIP_RELEASE_PUSHES=1` (the push gate
+  compares the installed binary, so the install must come before the push) and `GOH_INSTALLS`.
+  The first ship stopped in the release commit's `check_agent_version.py` (the bump left both musl
+  agents on the old number) and its rollback kept the staged bump: the kit now runs `./build.sh`
+  after the bump and restores from HEAD, index and tree. Pinned by `tests/test_ship_release.py`.
+
+### Fixed — `tools/lint_linux.sh` could read PASSED while its container failed (MON.LINTLINUX)
+- On 2026-11-13 the Linux lint read PASSED while its container died of input/output errors on a
+  full disk. The verdict was the container's exit status alone, in a `bash -c` whose `a && b`
+  lines exempt `a` from errexit, whose tar pipe had no pipefail, and whose output all went to
+  /dev/null. The container now prints `MONITOR_LINT_LINUX_OK <rustc>` only after clippy
+  succeeded, and the step passes on exit 0 AND that line on the pinned compiler; anything else
+  is FAILED with the log's tail. A real run also showed the first FAILED: `docker build
+  --progress` is unknown without buildx.
+- One pin (`RUST_VERSION`, 1.100.0) names the image (`monitor-linux-lint:1.100.0-bookworm`, the
+  libraries and clippy baked in) and `RUSTUP_TOOLCHAIN`, so the container no longer fetches a
+  different compiler at run time than its image tag claimed (rust:1.99.1 pulled 1.100). The
+  cargo target and registry are docker named volumes.
+
+### Fixed — clippy 1.100 refused the workspace (EST.REDGATES3)
+- rustc/clippy 1.100.0 extended `map_unwrap_or` to `.map(f).unwrap_or_default()`
+  (now `map_or_default`, stable in 1.100) and made `std::process::ExitCode`
+  `#[must_use]`, so `#[must_use]` on the three `headless` passes was
+  `double_must_use` and the agent-tick test discarded the loop's exit code.
+  Twelve sites rewritten, three attributes removed, the test's task returns
+  the code. No `#[allow]`.
+- cargo 1.100's unused-dependency lint fired on `multitop-vault`'s `tokio`,
+  used in the library only by the Linux-only fprintd poll: it is now a Linux
+  dependency (`time`) plus a dev-dependency for the async tests.
+
 ## v0.69.7 — rmcp 3.9.0 for RUSTSEC-2026-0462 _(2026-11-10)_
 
 ### Security — rmcp moved past the Streamable HTTP buffering advisory (SEC.RMCP.MONITOR)
