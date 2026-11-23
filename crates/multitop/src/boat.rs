@@ -92,6 +92,10 @@ impl Sandbox {
         self.size.as_deref().unwrap_or("unknown")
     }
 
+    pub(crate) fn title(&self) -> String {
+        format!("{} [{}]", self.name(), self.state)
+    }
+
     #[must_use]
     pub fn is_running(&self) -> bool {
         matches!(self.state.as_str(), "idle" | "running" | "ready")
@@ -118,12 +122,7 @@ impl Sandbox {
         let prefix = if self.is_running() { ACTIVE } else { OFFLINE };
         Server {
             host: format!("{prefix}{}", self.id),
-            name: Some(format!(
-                "{} [{}] | SIZE {}",
-                self.name(),
-                self.state,
-                self.size()
-            )),
+            name: Some(format!("{} | SIZE {}", self.title(), self.size())),
             port: crate::config::DEFAULT_PORT,
             ..Server::default()
         }

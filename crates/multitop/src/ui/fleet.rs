@@ -1,11 +1,12 @@
 //! Boat tiles. Structured samples supply the visual layout; errors and other
 //! views still pass through the existing notice/scrollback composer.
 
-use crate::{app::App, panel::Mode};
+use crate::{app::App, boat, panel::Mode};
 use multitop_agent::fmt::fmt_size;
 use ratatui::{
     layout::Rect,
-    widgets::{Paragraph, Wrap},
+    text::Line,
+    widgets::{Block, Paragraph, Wrap},
     Frame,
 };
 
@@ -17,26 +18,29 @@ pub fn draw(f: &mut Frame, app: &App, index: usize, area: Rect) -> Option<usize>
     let pal = app.current_theme();
     let state = app.boat.as_ref()?;
     let snapshot = state.fresh_sample(panel);
-    let name = panel.server.name.as_deref().unwrap_or(&panel.server.host);
+    let offline = boat::offline(&panel.server.host);
+    let graphs = panel.mode == Mode::Graphs && !offline;
+    let sandbox = boat::identity(&panel.server.host)
+        .filter(|_| graphs)
+        .and_then(|id| state.inventory.iter().find(|sandbox| sandbox.id == id));
+    let graph_title = sandbox.map(boat::Sandbox::title);
+    let name = graph_title
+        .as_deref()
+        .or(panel.server.name.as_deref())
+        .unwrap_or(&panel.server.host);
     let swap = snapshot.filter(|_| !state.display.hide_memory).map(|snap| {
         snap.swap.map_or_else(
             || "SWAP unavailable".into(),
             |usage| format!("SWAP {}/{}", fmt_size(usage.used), fmt_size(usage.total)),
         )
     });
-    let suffix = swap.map_or_else(
-        || {
-            if snapshot.is_none()
-                && panel.last_monitor.is_some()
-                && !crate::boat::offline(&panel.server.host)
-            {
-                " | no live sample".into()
-            } else {
-                String::new()
-            }
-        },
-        |s| format!(" | {s}"),
-    );
+    let suffix = if let Some(swap) = swap.as_deref().filter(|_| !graphs) {
+        format!(" | {swap}")
+    } else if snapshot.is_none() && panel.last_monitor.is_some() && !offline {
+        " | no live sample".into()
+    } else {
+        String::new()
+    };
     let name = crate::layout::fit_banner(
         "",
         name,
@@ -49,11 +53,11 @@ pub fn draw(f: &mut Frame, app: &App, index: usize, area: Rect) -> Option<usize>
     }
     let inner = border.inner(area);
     f.render_widget(border, area);
-    if crate::boat::offline(&panel.server.host) {
+    if offline {
         super::dead::draw(f, inner, &pal);
         return Some(0);
     }
-    if panel.mode == Mode::Graphs && !panel.history.is_empty() {
+    if graphs && !panel.history.is_empty() {
         let content = metric_area(f, panel, inner, &pal, snapshot.is_none());
         draw_graphs(
             f,
@@ -62,6 +66,10 @@ pub fn draw(f: &mut Frame, app: &App, index: usize, area: Rect) -> Option<usize>
             &pal,
             app.graph_zoom,
             state.display.hide_memory,
+            [
+                sandbox.map(|sandbox| super::boat_list::size_label(sandbox.size())),
+                swap.as_deref(),
+            ],
         );
         return Some(0);
     }
@@ -147,6 +155,7 @@ fn draw_graphs(
     pal: &multitop_agent::palette_view::PaletteView,
     zoom: u8,
     hide_memory: bool,
+    [size, swap]: [Option<&str>; 2],
 ) {
     if area.height < 2 {
         let mut summary = format!("CPU {:.0}%", panel.history.cpu.latest().unwrap_or_default());
@@ -170,28 +179,34 @@ fn draw_graphs(
         area.height.div_ceil(2)
     };
     let (cpu, mem) = meters::split_y(area, cpu_height);
-    for (name, series, rect) in [
-        ("CPU", &panel.history.cpu, cpu),
-        ("MEM", &panel.history.mem, mem),
+    for (name, series, rect, detail) in [
+        ("CPU", &panel.history.cpu, cpu, size),
+        ("MEM", &panel.history.mem, mem, swap),
     ] {
         if rect.height == 0 {
             continue;
         }
         let latest = series.latest().unwrap_or_default();
         let title = format!(" {name} {latest:.0}% ");
-        let plot = if rect.height >= 3 {
-            let border = meters::block(title, pal);
-            let plot = border.inner(rect);
-            f.render_widget(border, rect);
-            plot
+        let framed = rect.height >= 3;
+        let detail = detail.map(|detail| Line::from(format!(" {detail} ")).right_aligned());
+        let title = Line::from(title);
+        let detail = detail.filter(|detail| {
+            let available = usize::from(rect.width).saturating_sub(usize::from(framed) * 2);
+            title.width() + detail.width() < available
+        });
+        let mut block = if framed {
+            meters::block(title, pal)
         } else {
-            let (heading, plot) = meters::split_y(rect, 1);
-            f.render_widget(
-                Paragraph::new(title).style(meters::style(pal.primary())),
-                heading,
-            );
-            plot
+            Block::new()
+                .title_top(title)
+                .title_style(meters::style(pal.primary()))
         };
+        if let Some(detail) = detail {
+            block = block.title_top(detail);
+        }
+        let plot = block.inner(rect);
+        f.render_widget(block, rect);
         let samples = meters::samples(series, plot.width, zoom);
         meters::plot(f, plot, &samples, pal);
     }

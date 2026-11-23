@@ -282,7 +282,7 @@ fn compute_cost(dollars: f64) -> String {
     }
 }
 
-fn size_label(size: &str) -> &'static str {
+pub(super) fn size_label(size: &str) -> &'static str {
     match size {
         "small" => "S",
         "default" => "D",

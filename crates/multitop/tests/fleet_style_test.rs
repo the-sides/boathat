@@ -98,12 +98,37 @@ fn graphs_have_height_colors_and_no_network_at_all_sizes() {
     let _guard = multitop::password_store::lock_for_test();
     multitop::password_store::enable_mock_store();
     let mut app = fixture();
+    let mut inventory = boat::parse_inventory(
+        br#"{"sandboxes":[{"id":"bx_demo","name":"Demo machine with a distinctive branch name","state":"idle","type":"xlarge"}]}"#,
+    )
+    .unwrap();
+    let sandbox = inventory.pop().unwrap();
+    let state = app.boat.as_mut().unwrap();
+    let received_at = state.samples.remove("localhost").unwrap();
+    state.samples.insert(sandbox.id.clone(), received_at);
+    app.panels[0].server = sandbox.server();
+    state.inventory.push(sandbox);
     app.panels[0].mode = Mode::Graphs;
     app.rerender_all((158, 48));
     let screen = draw(&mut app, 160, 50);
     let output = text(&screen);
     assert!(output.contains("CPU") && output.contains("MEM"));
     assert!(!output.contains("NET"));
+    let rows: Vec<_> = screen
+        .content
+        .chunks(160)
+        .map(|row| {
+            row.iter()
+                .map(ratatui::buffer::Cell::symbol)
+                .collect::<String>()
+        })
+        .collect();
+    assert!(rows[0].contains("Demo machine with a distinctive branch name [idle]"));
+    assert!(!output.contains("SIZE"));
+    let cpu = rows.iter().find(|row| row.contains("CPU 55%")).unwrap();
+    assert!(cpu.ends_with(" XL ╮│"), "{cpu}");
+    let mem = rows.iter().find(|row| row.contains("MEM 38%")).unwrap();
+    assert!(mem.ends_with(" SWAP 1.0GiB/8.0GiB ╮│"), "{mem}");
     let colors: std::collections::HashSet<_> = screen
         .content
         .iter()
