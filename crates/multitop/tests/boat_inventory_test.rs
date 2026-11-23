@@ -392,3 +392,95 @@ fn list_draws_lease_and_live_metrics_on_one_row_above_stopped_boats() {
     assert!(compact_row(4).contains("Run time") && compact_row(4).contains("Compute $"));
     assert!(compact_row(5).contains("Finished"));
 }
+
+#[test]
+fn list_gives_ssh_hosts_their_own_dividers_and_sparklines() {
+    use multitop::app::{App, Msg};
+    use multitop_agent::{proc::Usage, proto::Payload, render::Snapshot};
+
+    let _guard = multitop::password_store::lock_for_test();
+    multitop::password_store::enable_mock_store();
+    let mut app = App::new(vec![
+        multitop::boat::local_server(),
+        multitop::config::Server {
+            host: "worker.example".into(),
+            name: Some("Worker".into()),
+            port: 22,
+            ..multitop::config::Server::default()
+        },
+    ]);
+    let mut state = multitop::boat_fleet::State::default();
+    state.select(
+        parse_inventory(br#"{"sandboxes":[{"id":"bx_build","name":"Build","state":"idle"}]}"#)
+            .unwrap(),
+    );
+    state.list_open = true;
+    app.boat = Some(state);
+    for (panel, cpu_pct, used) in [(0, 0.0, 8), (0, 50.0, 16), (1, 100.0, 24), (1, 0.0, 32)] {
+        assert!(app.apply(Msg::Packet {
+            panel,
+            epoch: 0,
+            gen: 0,
+            dims: (100, 24),
+            payload: Payload::Monitor(Snapshot {
+                cpu_pct,
+                mem: Usage::new(32 << 30, used << 30),
+                ..Snapshot::default()
+            }),
+        }));
+    }
+
+    let draw = |app: &mut App, width, height| {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|frame| multitop::ui::draw(frame, app))
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(usize::from(width))
+            .map(|row| {
+                row.iter()
+                    .map(ratatui::buffer::Cell::symbol)
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+    };
+    let rows = draw(&mut app, 100, 12);
+    assert!(rows[0].starts_with("This Mac · Local"));
+    assert!(rows[1].starts_with("CPU 50%   Memory 16.0G/32.0G"));
+    assert!(
+        rows[1].contains("·▄") && rows[1].ends_with("▂▄"),
+        "{}",
+        rows[1]
+    );
+    assert_eq!(rows[2], "━".repeat(100));
+    assert!(rows[3].starts_with("Worker · SSH"));
+    assert!(rows[4].starts_with("CPU 0%   Memory 32.0G/32.0G"));
+    assert!(
+        rows[4].contains("█·") && rows[4].ends_with("▆█"),
+        "{}",
+        rows[4]
+    );
+    assert_eq!(rows[5], rows[2]);
+    assert!(rows[6].starts_with("Boat sandboxes"));
+    assert!(rows[8].contains("Build"));
+    assert!(rows[6..].iter().all(|row| !row.contains("Worker")));
+
+    let narrow = draw(&mut app, 50, 12);
+    assert!(narrow[4].contains("Memory 100%") && !narrow[4].contains("MEM"));
+    let short = draw(&mut app, 100, 9);
+    assert!(short[5].starts_with("SSH") && short[5].contains("Worker"));
+    assert!(short[6].contains("Build"));
+
+    app.boat
+        .as_mut()
+        .unwrap()
+        .samples
+        .retain(|host, _| host == "localhost");
+    let missing = draw(&mut app, 100, 12);
+    assert_eq!(missing[4].trim_end(), "CPU —   Memory —   Swap —");
+    assert!(missing[1].ends_with("▂▄"));
+}

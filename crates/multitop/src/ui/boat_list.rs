@@ -5,13 +5,17 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Modifier, Style},
     text::Span,
-    widgets::{Block, BorderType, Borders, Paragraph, Row, Table, Wrap},
+    widgets::{Paragraph, Row, Table, Wrap},
     Frame,
 };
 
-use crate::{app::App, boat::Sandbox, boat_fleet::State, clock::now_epoch, layout::fit_row};
+use crate::{
+    app::App, boat::Sandbox, boat_fleet::State, clock::now_epoch, layout::fit_row, panel::Panel,
+};
 
 use super::{ink, keybar::keybar_content};
+
+mod hosts;
 
 const HEADERS: [&str; 8] = [
     "State",
@@ -53,83 +57,37 @@ pub(super) fn draw(f: &mut Frame, app: &mut App) {
         Paragraph::new(keybar).style(Style::default().bg(ink(theme.bar.bg))),
         footer,
     );
-    let expanded = body.height >= 6;
-    let [local, divider, heading, table] = Layout::vertical([
-        Constraint::Length(1 + u16::from(expanded)),
-        Constraint::Length(1),
-        Constraint::Length(u16::from(expanded)),
-        Constraint::Fill(1),
-    ])
-    .areas(body);
-    draw_local(f, local, app, state, &theme);
-    let accent = Style::default()
-        .fg(ink(theme.page.accent))
-        .add_modifier(Modifier::BOLD);
-    f.render_widget(
-        Block::new()
-            .borders(Borders::TOP)
-            .border_type(BorderType::Thick)
-            .border_style(accent),
-        divider,
-    );
-    let heading_text = if state.ssh_servers.is_empty() {
-        "Boat sandboxes"
-    } else {
-        "SSH hosts and Boat sandboxes"
-    };
-    f.render_widget(Paragraph::new(heading_text).style(accent), heading);
-    let scroll = draw_table(f, table, app, state, &theme);
+    let query = app.filter_query.trim().to_lowercase();
+    let ssh_hosts: Vec<_> = app
+        .panels
+        .iter()
+        .filter(|panel| {
+            !crate::ssh::is_local(&panel.server)
+                && crate::boat::identity(&panel.server.host).is_none()
+                && panel.matches_filter(&query)
+        })
+        .collect();
+    let (table, ssh_rows) = hosts::draw(f, body, app, state, &theme, &ssh_hosts);
+    let scroll = draw_table(f, table, app, state, &theme, ssh_rows, &query);
     if let Some(state) = &mut app.boat {
         state.list_scroll = scroll;
     }
 }
 
-fn draw_local(f: &mut Frame, area: Rect, app: &App, state: &State, theme: &PaletteView) {
-    let [heading, metrics] =
-        Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(area);
-    f.render_widget(
-        Paragraph::new("This Mac · Local").style(
-            Style::default()
-                .bg(ink(theme.bar.bg))
-                .fg(ink(theme.bar.text))
-                .add_modifier(Modifier::BOLD),
-        ),
-        heading,
-    );
-    if metrics.height == 0 {
-        return;
-    }
-    let sample = app
-        .panels
-        .iter()
-        .find(|panel| crate::ssh::is_local(&panel.server))
-        .and_then(|panel| state.fresh_sample(panel));
-    let swap = sample.and_then(|snap| snap.swap.as_ref()).map_or_else(
-        || MISSING.into(),
-        |usage| format!("{}/{}", compact_size(usage.used), compact_size(usage.total)),
-    );
-    let cpu = cpu(sample);
-    let status = if state.display.hide_memory {
-        format!("CPU {cpu}")
-    } else {
-        format!(
-            "CPU {cpu}   Memory {}   Swap {swap}",
-            memory(sample, area.width >= 64)
-        )
-    };
-    f.render_widget(
-        Paragraph::new(status).style(Style::default().fg(ink(theme.page.text))),
-        metrics,
-    );
-}
-
-fn draw_table(f: &mut Frame, body: Rect, app: &App, state: &State, theme: &PaletteView) -> usize {
+fn draw_table(
+    f: &mut Frame,
+    body: Rect,
+    app: &App,
+    state: &State,
+    theme: &PaletteView,
+    ssh_hosts: &[&Panel],
+    query: &str,
+) -> usize {
     let panels: BTreeMap<_, _> = app
         .panels
         .iter()
         .filter_map(|panel| crate::boat::identity(&panel.server.host).map(|id| (id, panel)))
         .collect();
-    let query = app.filter_query.trim().to_lowercase();
     let now = now_epoch();
     let ListColumns {
         columns,
@@ -155,11 +113,7 @@ fn draw_table(f: &mut Frame, body: Rect, app: &App, state: &State, theme: &Palet
         }
     };
     let normal = Style::default().fg(ink(theme.page.text));
-    for panel in app.panels.iter().filter(|panel| {
-        !crate::ssh::is_local(&panel.server)
-            && crate::boat::identity(&panel.server.host).is_none()
-            && panel.matches_filter(&query)
-    }) {
+    for panel in ssh_hosts {
         let server = &panel.server;
         let sample = state.fresh_sample(panel);
         add_rows(
@@ -176,7 +130,7 @@ fn draw_table(f: &mut Frame, body: Rect, app: &App, state: &State, theme: &Palet
             normal,
         );
     }
-    for boat in state.list_rows().filter(|boat| matches(boat, &query)) {
+    for boat in state.list_rows().filter(|boat| matches(boat, query)) {
         let sample = panels
             .get(boat.id.as_str())
             .and_then(|panel| state.fresh_sample(panel));
@@ -208,7 +162,7 @@ fn draw_table(f: &mut Frame, body: Rect, app: &App, state: &State, theme: &Palet
         let message = if !state.discovered && state.discovery_notice.is_none() {
             "Discovering Boat sandboxes…"
         } else if !query.is_empty() {
-            "No hosts match the filter."
+            "No sandboxes match the filter."
         } else {
             "No boats to show."
         };
